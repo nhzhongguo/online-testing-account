@@ -44,7 +44,7 @@
 
 ### Windows
 
-1. 下载 `Online testing account Setup 0.8.0.exe`。
+1. 下载 `Online.testing.account.Setup.0.8.0.exe`。
 2. 运行安装程序，可自定义安装目录。
 3. 首次运行如果 Windows 显示未知发布者，请先核对 Release 中的 SHA-256；当前开源版本未使用商业代码签名证书。
 
