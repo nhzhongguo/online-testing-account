@@ -23,7 +23,7 @@
 
 ![开源声明（早期开发参考图）](docs/images/open-source-notice.png)
 
-> 上图来自开发过程，旧名 `Account Pulse` 已在 `v0.8.0` 更名为 `Online testing account`，并换用新图标。
+> 上图来自开发过程，旧名 `Account Pulse` 已在 `v0.8.0` 起更名为 `Online testing account`，并换用新图标。
 
 ## 主要功能
 
@@ -44,13 +44,13 @@
 
 ### Windows
 
-1. 下载 `Online.testing.account.Setup.0.8.0.exe`。
+1. 下载 `Online.testing.account.Setup.0.8.1.exe`。
 2. 运行安装程序，可自定义安装目录。
 3. 首次运行如果 Windows 显示未知发布者，请先核对 Release 中的 SHA-256；当前开源版本未使用商业代码签名证书。
 
 ### Android
 
-1. 下载 `online-testing-account-v0.8.0-android.apk`。
+1. 下载 `online-testing-account-v0.8.1-android.apk`。
 2. 允许浏览器或文件管理器安装未知来源应用。
 3. 安装 APK。Android 7.0（API 24）及以上受支持。
 

@@ -42,8 +42,8 @@ The screenshots show the earlier development name `Account Pulse`. Version `0.8.
 
 Download installers from [GitHub Releases](https://github.com/nhzhongguo/online-testing-account/releases).
 
-- Windows: run `Online.testing.account.Setup.0.8.0.exe`. The current open-source build is not signed with a commercial code-signing certificate; verify the release SHA-256 first if SmartScreen warns.
-- Android: install `online-testing-account-v0.8.0-android.apk` after allowing installation from the browser or file manager. Android 7.0 / API 24 or newer is supported.
+- Windows: run `Online.testing.account.Setup.0.8.1.exe`. The current open-source build is not signed with a commercial code-signing certificate; verify the release SHA-256 first if SmartScreen warns.
+- Android: install `online-testing-account-v0.8.1-android.apk` after allowing installation from the browser or file manager. Android 7.0 / API 24 or newer is supported.
 - iOS is not included because it requires macOS and Apple signing infrastructure.
 
 ## Workflow

@@ -728,7 +728,7 @@ function App() {
       {showStartup && (
         <div className="startup-screen" role="status" aria-label={t('splash.loading')}>
           <div className="startup-brand">
-            <div className="startup-icon"><img src="/app-icon.png" alt="" /></div>
+            <div className="startup-icon"><img src="./app-icon.png" alt="" /></div>
             <h1>Online testing account</h1>
             <p>{t('splash.subtitle')}</p>
             <div className="startup-scan"><span /></div>
@@ -738,7 +738,7 @@ function App() {
       )}
       <header className="app-header">
         <div className="brand">
-          <div className="brand-mark"><img src="/app-icon.png" alt="" /></div>
+          <div className="brand-mark"><img src="./app-icon.png" alt="" /></div>
           <div className="brand-copy">
             <div className="brand-title-row"><h1>Online testing account</h1><span>{t('brand.version')}</span></div>
             <p>{t('brand.subtitle')}</p>

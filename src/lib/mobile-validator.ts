@@ -265,7 +265,7 @@ export async function checkNetworkRegionMobile(): Promise<NetworkCheckResult> {
   try {
     const response = await CapacitorHttp.get({
       url: 'https://www.cloudflare.com/cdn-cgi/trace',
-      headers: { 'User-Agent': 'Online-testing-account/0.8' },
+      headers: { 'User-Agent': 'Online-testing-account/0.8.1' },
       responseType: 'text',
       connectTimeout: 10_000,
       readTimeout: 10_000,
@@ -280,7 +280,7 @@ export async function checkNetworkRegionMobile(): Promise<NetworkCheckResult> {
     try {
       const response = await CapacitorHttp.get({
         url: 'https://api.country.is/',
-        headers: { 'User-Agent': 'Online-testing-account/0.8' },
+        headers: { 'User-Agent': 'Online-testing-account/0.8.1' },
         connectTimeout: 10_000,
         readTimeout: 10_000,
       });

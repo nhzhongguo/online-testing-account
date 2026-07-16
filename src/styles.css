@@ -1796,12 +1796,19 @@ tbody tr.selected {
 
   .metric-primary,
   .metric-compact {
-    min-height: 86px;
     border-bottom: 1px solid var(--line);
   }
 
+  .metric-primary {
+    min-height: 86px;
+  }
+
   .metric-compact {
-    grid-template-columns: 30px minmax(0, 1fr);
+    min-height: 64px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    padding: 10px 12px;
   }
 
   .workspace {

@@ -3,7 +3,7 @@ import { initReactI18next } from 'react-i18next';
 
 const resources = {
   zh: { translation: {
-    brand: { subtitle: '在线账号成活与额度检测', version: 'v0.8' },
+    brand: { subtitle: '在线账号成活与额度检测', version: 'v0.8.1' },
     header: { guide: '操作指引', openSource: '开源声明', privacy: '凭据仅保留在当前进程', desktop: '桌面模式', mobile: '移动端', preview: '浏览器预览', switchLanguage: 'Switch to English' },
     splash: { subtitle: '账号状态与 Codex 额度检测', loading: '正在启动安全检测环境' },
     metrics: { label: '账号检测统计', rate: '在线成活率', verifiedRatio: '{{alive}} / {{tested}} 已验证', verified: '已验证账号', verifiedHint: '实际请求已返回结果', pending: '待验证', invalid: '凭据失效', limited: '被限流', total: '总账号' },
@@ -25,7 +25,7 @@ const resources = {
     notices: { importComplete: '{{source}}完成：{{files}} 个文件，解析 {{accounts}} 个账号', issues: '，{{count}} 个问题', import: '导入', fileImport: '文件导入', folderImport: '文件夹“{{name}}”导入', noJson: '所选文件夹内没有 JSON 文件', folderFailed: '文件夹导入失败：{{message}}', folderFailedGeneric: '文件夹导入失败', jsonOnly: '仅支持 JSON 文件', tooLarge: '文件超过 10 MB', checkingIp: '正在检测当前出口 IP...', ipCheckFailed: '出口 IP 检测失败，已阻止在线验证', noAccounts: '没有需要验证的账号', validationServiceFailed: '本地验证服务连接失败', tokenRefreshed: '访问令牌已刷新', validationComplete: '在线验证完成：本批次 {{count}} 个凭据', quotaRefreshed: '额度已刷新', quotaUnavailable: '未获取到额度：{{detail}}', quotaFailed: '额度刷新失败，请检查国外代理连接', exported: '已导出 {{count}} 个剩余账号', deleted: '已删除 {{count}} 个凭据失效账号', notValidated: '未验证', drop: '释放以导入 JSON' },
   } },
   en: { translation: {
-    brand: { subtitle: 'Account health and Codex quota checks', version: 'v0.8' },
+    brand: { subtitle: 'Account health and Codex quota checks', version: 'v0.8.1' },
     header: { guide: 'Guide', openSource: 'Open source', privacy: 'Credentials stay in this process', desktop: 'Desktop', mobile: 'Mobile', preview: 'Browser preview', switchLanguage: '切换到中文' },
     splash: { subtitle: 'Account health and Codex quota checks', loading: 'Starting the secure test environment' },
     metrics: { label: 'Account validation metrics', rate: 'Alive rate', verifiedRatio: '{{alive}} / {{tested}} verified', verified: 'Verified', verifiedHint: 'Real requests returned results', pending: 'Pending', invalid: 'Invalid', limited: 'Rate limited', total: 'Total' },
