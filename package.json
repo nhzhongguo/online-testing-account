@@ -1,0 +1,80 @@
+{
+  "name": "online-testing-account",
+  "version": "0.8.0",
+  "private": true,
+  "description": "Authorized account health and Codex quota desktop inspector",
+  "author": "豫晨",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nhzhongguo/online-testing-account.git"
+  },
+  "homepage": "https://github.com/nhzhongguo/online-testing-account#readme",
+  "bugs": "https://github.com/nhzhongguo/online-testing-account/issues",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev:web": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc -b && vite build",
+    "package:win": "npm run build && electron-builder --win nsis",
+    "mobile:sync": "npm run build && cap sync android",
+    "mobile:android": "cap open android",
+    "package:android": "npm run mobile:sync && cd android && gradlew.bat assembleDebug",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "@vitejs/plugin-react": "latest",
+    "i18next": "^26.3.6",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-i18next": "^17.0.10"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
+    "@eslint/js": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "cross-env": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "globals": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vite": "latest",
+    "vitest": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "com.yuchen.onlinetestingaccount",
+    "productName": "Online testing account",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

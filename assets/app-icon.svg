@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Online testing account application icon</title>
+  <desc id="desc">A cyan account scanner and pulse shield on a dark technology background.</desc>
+  <defs>
+    <linearGradient id="background" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15282d"/>
+      <stop offset="0.55" stop-color="#0b171b"/>
+      <stop offset="1" stop-color="#071013"/>
+    </linearGradient>
+    <linearGradient id="scan" x1="216" y1="256" x2="814" y2="752" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#54f0df"/>
+      <stop offset="0.52" stop-color="#24c8d2"/>
+      <stop offset="1" stop-color="#27e58d"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="512" y1="300" x2="512" y2="748" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f8ffff"/>
+      <stop offset="1" stop-color="#bfefec"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000" flood-opacity=".48"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="214" fill="url(#background)"/>
+  <path d="M180 316V230c0-28 22-50 50-50h86M708 180h86c28 0 50 22 50 50v86M844 708v86c0 28-22 50-50 50h-86M316 844h-86c-28 0-50-22-50-50v-86"
+        fill="none" stroke="#64828a" stroke-width="24" stroke-linecap="round" opacity=".62"/>
+
+  <circle cx="512" cy="512" r="286" fill="none" stroke="#18373d" stroke-width="42"/>
+  <path d="M323 297a286 286 0 0 1 380 20" fill="none" stroke="url(#scan)" stroke-width="42" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M724 704a286 286 0 0 1-398 17" fill="none" stroke="url(#scan)" stroke-width="42" stroke-linecap="round" filter="url(#glow)"/>
+  <circle cx="296" cy="325" r="24" fill="#55f0dd"/>
+  <circle cx="731" cy="689" r="24" fill="#2ae294"/>
+
+  <path d="M512 292 692 362v138c0 126-72 218-180 264-108-46-180-138-180-264V362l180-70Z"
+        fill="#10282d" stroke="url(#shield)" stroke-width="28" stroke-linejoin="round" filter="url(#soft-shadow)"/>
+  <path d="M376 526h70l42-102 61 196 43-94h58" fill="none" stroke="url(#scan)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <circle cx="512" cy="512" r="20" fill="#f7ffff"/>
+</svg>

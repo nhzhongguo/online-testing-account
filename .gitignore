@@ -1,0 +1,35 @@
+# Dependencies and build output
+node_modules/
+dist/
+release/
+release-build/
+artifacts/
+coverage/
+
+# Android generated/local files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.jks
+*.keystore
+
+# Local credentials and imported/exported account data
+.env
+.env.*
+!.env.example
+/*.json
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/tsconfig.app.json
+!/tsconfig.node.json
+**/*.sub2api.*.json
+online-testing-account-usable-*.json
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
