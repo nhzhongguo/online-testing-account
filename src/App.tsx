@@ -20,6 +20,8 @@ import {
   LoaderCircle,
   LockKeyhole,
   PanelRight,
+  Pause,
+  Play,
   RefreshCw,
   Scale,
   Search,
@@ -46,9 +48,11 @@ import {
 } from './lib/accounts';
 import { checkNetworkRegionMobile, isNativeMobile, validateCredentialMobile } from './lib/mobile-validator';
 import { runSequentially } from './lib/sequential-runner';
+import { ValidationController } from './lib/validation-controller';
 
 type Filter = 'all' | 'untested' | 'alive' | 'unauthorized' | 'rate_limited' | 'attention';
 type NetworkCheckState = NetworkCheckResult & { state: 'idle' | 'checking' | 'allowed' | 'blocked' | 'error' };
+type ValidationRunState = 'idle' | 'running' | 'paused' | 'cancelling';
 
 interface GuideStep {
   target: string;
@@ -237,7 +241,7 @@ function App() {
   const [openSourceOpen, setOpenSourceOpen] = useState(false);
   const [validationScope, setValidationScope] = useState<'batch' | 'all'>('batch');
   const [validationProgress, setValidationProgress] = useState({ done: 0, total: 0 });
-  const [isValidating, setIsValidating] = useState(false);
+  const [validationRunState, setValidationRunState] = useState<ValidationRunState>('idle');
   const [activeValidationId, setActiveValidationId] = useState<string>();
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ done: 0, total: 0 });
@@ -256,7 +260,9 @@ function App() {
   const [showStartup, setShowStartup] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const validationControlRef = useRef(new ValidationController());
   const deferredQuery = useDeferredValue(query);
+  const isValidating = validationRunState !== 'idle';
   const currentLanguage = i18n.resolvedLanguage;
   const localizedFormatLabels = useMemo(() => ({
     ...formatLabels,
@@ -550,6 +556,25 @@ function App() {
     void checkCurrentNetwork();
   }
 
+  function pauseValidation() {
+    if (validationRunState !== 'running') return;
+    validationControlRef.current.pause();
+    setValidationRunState('paused');
+  }
+
+  function resumeValidation() {
+    if (validationRunState !== 'paused') return;
+    if (validationControlRef.current.isCancelled()) return;
+    validationControlRef.current.resume();
+    setValidationRunState('running');
+  }
+
+  function cancelValidation() {
+    if (validationRunState === 'idle' || validationRunState === 'cancelling') return;
+    validationControlRef.current.cancel();
+    setValidationRunState('cancelling');
+  }
+
   function handlePasteImport() {
     if (!pasteValue.trim()) return;
     ingestText(pasteValue, 'pasted-json');
@@ -561,14 +586,15 @@ function App() {
     const network = await checkCurrentNetwork();
     if (!network.allowed) return;
     setValidateOpen(false);
-    setIsValidating(true);
+    validationControlRef.current.reset();
+    setValidationRunState('running');
 
     const pending = accounts.filter((account) => ['untested', 'unsupported'].includes(account.onlineStatus));
     const retryable = accounts.filter((account) => !['untested', 'unsupported', 'checking', 'alive'].includes(account.onlineStatus));
     const candidates = [...pending, ...retryable];
     const batch = validationScope === 'all' ? candidates : candidates.slice(0, 25);
     if (!batch.length) {
-      setIsValidating(false);
+      setValidationRunState('idle');
       setNotice(t('notices.noAccounts'));
       return;
     }
@@ -600,6 +626,7 @@ function App() {
     };
 
     await runSequentially(batch, async (account) => {
+      if (!await validationControlRef.current.waitForPermission()) return false;
       setActiveValidationId(account.id);
       let result: ValidationResult;
       try {
@@ -614,11 +641,18 @@ function App() {
         flushResults();
         await yieldToInterface();
       }
+      setActiveValidationId(undefined);
+      return true;
     });
 
+    flushResults();
     setActiveValidationId(undefined);
-    setIsValidating(false);
-    setNotice(t('notices.validationComplete', { count: batch.length }));
+    const cancelled = validationControlRef.current.isCancelled();
+    validationControlRef.current.reset();
+    setValidationRunState('idle');
+    setNotice(cancelled
+      ? t('notices.validationCancelled', { done: completed, total: batch.length })
+      : t('notices.validationComplete', { count: completed }));
   }
 
   async function refreshSelectedQuota() {
@@ -714,6 +748,7 @@ function App() {
   return (
     <div
       className="app-shell"
+      data-validation-state={validationRunState}
       onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
       onDragOver={(event) => event.preventDefault()}
       onDragLeave={(event) => {
@@ -755,8 +790,10 @@ function App() {
             <Languages aria-hidden="true" />{isEnglish ? '中文' : 'EN'}
           </button>
           <span className="privacy-state"><ShieldCheck aria-hidden="true" /> {t('header.privacy')}</span>
-          <span className={`runtime-dot ${window.accountPulse ? 'desktop' : nativeMobile ? 'mobile' : 'web'}`} />
-          {window.accountPulse ? t('header.desktop') : nativeMobile ? t('header.mobile') : t('header.preview')}
+          <span className="runtime-state">
+            <span className={`runtime-dot ${window.accountPulse ? 'desktop' : nativeMobile ? 'mobile' : 'web'}`} />
+            {window.accountPulse ? t('header.desktop') : nativeMobile ? t('header.mobile') : t('header.preview')}
+          </span>
         </div>
       </header>
 
@@ -796,22 +833,42 @@ function App() {
               <button className="icon-button" onClick={() => setPasteOpen(true)} disabled={isImporting || isValidating} title={t('actions.pasteJson')} aria-label={t('actions.pasteJson')}>
                 <ClipboardPaste />
               </button>
-              <button
-                className="button verify"
-                data-guide="validate"
-                onClick={openValidationDialog}
-                disabled={!onlineCandidates.length || isValidating || isImporting}
-              >
-                {isValidating ? <LoaderCircle className="spin" /> : <ShieldCheck />}
-                {isValidating ? `${validationProgress.done}/${validationProgress.total}` : t('actions.validate')}
-              </button>
+              {validationRunState === 'idle' ? (
+                <button
+                  className="button verify validation-control idle"
+                  data-guide="validate"
+                  onClick={openValidationDialog}
+                  disabled={!onlineCandidates.length || isImporting}
+                >
+                  <ShieldCheck />{t('actions.validate')}
+                </button>
+              ) : (
+                <>
+                  <button
+                    className={`button verify validation-control ${validationRunState}`}
+                    data-guide="validate"
+                    onClick={validationRunState === 'paused' ? resumeValidation : pauseValidation}
+                    disabled={validationRunState === 'cancelling'}
+                  >
+                    {validationRunState === 'cancelling'
+                      ? <LoaderCircle className="spin" />
+                      : validationRunState === 'paused' ? <Play /> : <Pause />}
+                    {validationRunState === 'cancelling'
+                      ? t('actions.cancellingValidation')
+                      : `${t(validationRunState === 'paused' ? 'actions.resumeValidation' : 'actions.pauseValidation')} · ${validationProgress.done}/${validationProgress.total}`}
+                  </button>
+                  <button className="button danger cancel-validation" onClick={cancelValidation} disabled={validationRunState === 'cancelling'}>
+                    <X />{t('actions.cancelValidation')}
+                  </button>
+                </>
+              )}
               <button className="button danger" data-guide="cleanup" onClick={() => setCleanupOpen(true)} disabled={!credentialFailures.length || isValidating || isImporting} title={t('cleanup.title')}>
                 <ShieldX />{t('actions.deleteInvalid')} {credentialFailures.length || ''}
               </button>
-              <button className="button secondary" data-guide="export" onClick={() => void exportRetainedAccounts()} disabled={!accounts.length || isImporting} title={t('actions.exportRemaining')}>
+              <button className="button secondary" data-guide="export" onClick={() => void exportRetainedAccounts()} disabled={!accounts.length || isImporting || isValidating} title={t('actions.exportRemaining')}>
                 <Download />{t('actions.exportRemaining')}
               </button>
-              <button className="icon-button danger" onClick={clearAll} disabled={isImporting || (!accounts.length && !issues.length)} title={t('actions.clear')} aria-label={t('actions.clear')}>
+              <button className="icon-button danger" onClick={clearAll} disabled={isImporting || isValidating || (!accounts.length && !issues.length)} title={t('actions.clear')} aria-label={t('actions.clear')}>
                 <Trash2 />
               </button>
             </div>

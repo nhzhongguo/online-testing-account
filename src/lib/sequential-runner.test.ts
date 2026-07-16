@@ -18,4 +18,15 @@ describe('runSequentially', () => {
     expect(maxActive).toBe(1);
     expect(completed).toEqual([1, 2, 3, 4]);
   });
+
+  it('stops before the next item when a task returns false', async () => {
+    const started: number[] = [];
+
+    await runSequentially([1, 2, 3, 4], async (item) => {
+      started.push(item);
+      return item < 2;
+    });
+
+    expect(started).toEqual([1, 2]);
+  });
 });
