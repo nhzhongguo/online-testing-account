@@ -27,7 +27,7 @@
 
 ## 主要功能
 
-- 实际在线验证：OAuth 账号请求 Codex 上游，API Key 请求 OpenAI 模型列表。
+- 实际在线验证：账号按顺序逐个验证，同一时间只发送 1 个请求。OAuth 请求 Codex 上游，API Key 请求 OpenAI 模型列表。
 - 国外 IP 前置检查：优先使用 Cloudflare Trace，失败时回退到 `country.is`。
 - Codex 额度：显示 5 小时和周期窗口的剩余百分比及重置时间。
 - 文件与文件夹导入：Windows 可递归导入整个文件夹，也可导入一个或多个 JSON。
@@ -44,13 +44,13 @@
 
 ### Windows
 
-1. 下载 `Online.testing.account.Setup.0.8.1.exe`。
+1. 下载 `Online.testing.account.Setup.0.8.2.exe`。
 2. 运行安装程序，可自定义安装目录。
 3. 首次运行如果 Windows 显示未知发布者，请先核对 Release 中的 SHA-256；当前开源版本未使用商业代码签名证书。
 
 ### Android
 
-1. 下载 `online-testing-account-v0.8.1-android.apk`。
+1. 下载 `online-testing-account-v0.8.2-android.apk`。
 2. 允许浏览器或文件管理器安装未知来源应用。
 3. 安装 APK。Android 7.0（API 24）及以上受支持。
 
@@ -62,7 +62,7 @@ Windows 安装包和 Android APK 都由同一仓库源码构建。iOS 需要 mac
 2. 点击“导入文件夹”或“导入文件”，也可粘贴 JSON。
 3. 用搜索和状态筛选确认导入结果。
 4. 点击“在线验证”。软件会先检测出口 IP，只有检测到非中国大陆出口时才能继续。
-5. 选择“本批 25 个”或“全部待验证账号”开始实际请求。
+5. 选择“本批 25 个”或“全部待验证账号”开始实际请求。两种范围都会严格串行，只有当前账号显示“验证中”。
 6. 点击账号查看完整结论、HTTP 状态、额度和重置时间。
 7. 如需清理，点击“删除失效”。该操作只针对 401，不会删除其他失败状态。
 8. 点击“导出剩余”保存其余账号。Android 会打开系统分享/保存面板。

@@ -5,7 +5,7 @@ async function fetchWithTimeout(url) {
   const timeout = setTimeout(() => controller.abort(), NETWORK_CHECK_TIMEOUT_MS);
   try {
     return await fetch(url, {
-      headers: { 'User-Agent': 'Online-testing-account/0.8.1' },
+      headers: { 'User-Agent': 'Online-testing-account/0.8.2' },
       signal: controller.signal,
     });
   } finally {

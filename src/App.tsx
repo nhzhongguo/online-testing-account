@@ -45,6 +45,7 @@ import {
   type QuotaWindow,
 } from './lib/accounts';
 import { checkNetworkRegionMobile, isNativeMobile, validateCredentialMobile } from './lib/mobile-validator';
+import { runSequentially } from './lib/sequential-runner';
 
 type Filter = 'all' | 'untested' | 'alive' | 'unauthorized' | 'rate_limited' | 'attention';
 type NetworkCheckState = NetworkCheckResult & { state: 'idle' | 'checking' | 'allowed' | 'blocked' | 'error' };
@@ -237,6 +238,7 @@ function App() {
   const [validationScope, setValidationScope] = useState<'batch' | 'all'>('batch');
   const [validationProgress, setValidationProgress] = useState({ done: 0, total: 0 });
   const [isValidating, setIsValidating] = useState(false);
+  const [activeValidationId, setActiveValidationId] = useState<string>();
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ done: 0, total: 0 });
   const [networkCheck, setNetworkCheck] = useState<NetworkCheckState>({
@@ -571,52 +573,50 @@ function App() {
       return;
     }
     setValidationProgress({ done: 0, total: batch.length });
-    const batchIds = new Set(batch.map((account) => account.id));
-    setAccounts((current) => current.map((account) => batchIds.has(account.id)
-      ? { ...account, onlineStatus: 'checking', onlineDetail: undefined }
-      : account));
 
-    const results = new Map<string, ValidationResult>();
-    let nextIndex = 0;
+    const bufferedResults = new Map<string, ValidationResult>();
     let completed = 0;
-    const progressStep = Math.max(1, Math.ceil(batch.length / 500));
-    const workerCount = Math.min(validationScope === 'all' ? 10 : 4, batch.length);
-    const workers = Array.from({ length: workerCount }, async () => {
-      while (nextIndex < batch.length) {
-        const account = batch[nextIndex];
-        nextIndex += 1;
-        let result: ValidationResult;
-        try {
-          result = await requestValidation(validationInputFor(account));
-        } catch {
-          result = { status: 'network_error', detail: t('notices.validationServiceFailed') };
-        }
-        results.set(account.id, result);
-        completed += 1;
-        if (completed === batch.length || completed % progressStep === 0) {
-          setValidationProgress({ done: completed, total: batch.length });
-        }
+    const resultFlushStep = Math.max(1, Math.ceil(batch.length / 500));
+    const flushResults = () => {
+      if (!bufferedResults.size) return;
+      const completedResults = new Map(bufferedResults);
+      bufferedResults.clear();
+      setAccounts((current) => current.map((account) => {
+        const result = completedResults.get(account.id);
+        if (!result) return account;
+        return {
+          ...account,
+          credential: result.credential || account.credential,
+          refreshCredential: result.refreshCredential || account.refreshCredential,
+          expiresAt: result.expiresAt || account.expiresAt,
+          localStatus: result.expiresAt ? 'current' : account.localStatus,
+          localDetail: result.expiresAt ? t('notices.tokenRefreshed') : account.localDetail,
+          onlineStatus: result.status,
+          onlineDetail: result.detail,
+          checkedAt: Date.now(),
+          quota: result.quota || account.quota,
+        };
+      }));
+    };
+
+    await runSequentially(batch, async (account) => {
+      setActiveValidationId(account.id);
+      let result: ValidationResult;
+      try {
+        result = await requestValidation(validationInputFor(account));
+      } catch {
+        result = { status: 'network_error', detail: t('notices.validationServiceFailed') };
+      }
+      bufferedResults.set(account.id, result);
+      completed += 1;
+      setValidationProgress({ done: completed, total: batch.length });
+      if (completed === batch.length || completed % resultFlushStep === 0) {
+        flushResults();
+        await yieldToInterface();
       }
     });
-    await Promise.all(workers);
 
-    setAccounts((current) => current.map((account) => {
-      const result = results.get(account.id);
-      if (!result) return account;
-      return {
-        ...account,
-        credential: result.credential || account.credential,
-        refreshCredential: result.refreshCredential || account.refreshCredential,
-        expiresAt: result.expiresAt || account.expiresAt,
-        localStatus: result.expiresAt ? 'current' : account.localStatus,
-        localDetail: result.expiresAt ? t('notices.tokenRefreshed') : account.localDetail,
-        onlineStatus: result.status,
-        onlineDetail: result.detail,
-        checkedAt: Date.now(),
-        quota: result.quota || account.quota,
-      };
-    }));
-
+    setActiveValidationId(undefined);
     setIsValidating(false);
     setNotice(t('notices.validationComplete', { count: batch.length }));
   }
@@ -843,19 +843,22 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleAccounts.map((account) => (
+                  {visibleAccounts.map((account) => {
+                    const displayStatus = activeValidationId === account.id ? 'checking' : account.onlineStatus;
+                    return (
                     <tr key={account.id} className={selected?.id === account.id ? 'selected' : ''} onClick={() => { setSelectedId(account.id); setMobileView('details'); }}>
                       <td>
                         <strong className="account-email">{account.email}</strong>
                         <span className="account-sub">{account.accountId || account.credentialPreview}</span>
                       </td>
                       <td><span className="format-label">{localizedFormatLabels[account.format]}</span></td>
-                      <td><span className={`status ${account.onlineStatus}`}><StatusIcon status={account.onlineStatus} />{t(onlineLabelKeys[account.onlineStatus])}</span></td>
+                      <td><span className={`status ${displayStatus}`}><StatusIcon status={displayStatus} />{t(onlineLabelKeys[displayStatus])}</span></td>
                       <td><CompactQuota quota={account.quota} /></td>
                       <td className="mono">{formatCheckTime(account.checkedAt)}</td>
                       <td><ChevronRight className="row-arrow" /></td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             ) : (
@@ -905,9 +908,12 @@ function App() {
 
               <div className="detail-section">
                 <h3>{t('details.conclusion')}</h3>
-                <div className={`verdict ${selected.onlineStatus}`}>
-                  <StatusIcon status={selected.onlineStatus} />
-                  <div><strong>{t(onlineLabelKeys[selected.onlineStatus])}</strong><span>{selected.onlineDetail || t('details.notValidated')}</span></div>
+                <div className={`verdict ${activeValidationId === selected.id ? 'checking' : selected.onlineStatus}`}>
+                  <StatusIcon status={activeValidationId === selected.id ? 'checking' : selected.onlineStatus} />
+                  <div>
+                    <strong>{t(onlineLabelKeys[activeValidationId === selected.id ? 'checking' : selected.onlineStatus])}</strong>
+                    <span>{activeValidationId === selected.id ? t('validation.checkingAccount') : selected.onlineDetail || t('details.notValidated')}</span>
+                  </div>
                 </div>
               </div>
 

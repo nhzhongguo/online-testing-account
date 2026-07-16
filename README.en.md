@@ -27,7 +27,7 @@ The screenshots show the earlier development name `Account Pulse`. Version `0.8.
 
 ## Features
 
-- Real OAuth validation against the Codex upstream and API-key validation against the OpenAI model list.
+- Sequential real validation with only one request in flight: OAuth against the Codex upstream and API keys against the OpenAI model list.
 - Exit-IP gate using Cloudflare Trace with a `country.is` fallback.
 - Codex 5-hour and weekly quota, remaining percentage, and reset time.
 - Recursive folder import on Windows plus single/multiple JSON file import.
@@ -42,8 +42,8 @@ The screenshots show the earlier development name `Account Pulse`. Version `0.8.
 
 Download installers from [GitHub Releases](https://github.com/nhzhongguo/online-testing-account/releases).
 
-- Windows: run `Online.testing.account.Setup.0.8.1.exe`. The current open-source build is not signed with a commercial code-signing certificate; verify the release SHA-256 first if SmartScreen warns.
-- Android: install `online-testing-account-v0.8.1-android.apk` after allowing installation from the browser or file manager. Android 7.0 / API 24 or newer is supported.
+- Windows: run `Online.testing.account.Setup.0.8.2.exe`. The current open-source build is not signed with a commercial code-signing certificate; verify the release SHA-256 first if SmartScreen warns.
+- Android: install `online-testing-account-v0.8.2-android.apk` after allowing installation from the browser or file manager. Android 7.0 / API 24 or newer is supported.
 - iOS is not included because it requires macOS and Apple signing infrastructure.
 
 ## Workflow
@@ -52,7 +52,7 @@ Download installers from [GitHub Releases](https://github.com/nhzhongguo/online-
 2. Import a folder, one or more JSON files, or paste JSON.
 3. Check the parsed accounts with search and filters.
 4. Choose **Validate**. The app checks the current exit IP first.
-5. Validate the next 25 accounts or all pending accounts.
+5. Validate the next 25 accounts or all pending accounts. Both scopes run sequentially, and only the current account shows the checking state.
 6. Select an account to inspect its HTTP result, quota, and reset times.
 7. Use **Delete invalid** to remove only credentials that returned HTTP 401.
 8. Use **Export remaining**. Android opens the native share/save sheet.
