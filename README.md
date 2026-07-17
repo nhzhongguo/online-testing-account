@@ -52,6 +52,12 @@
 > [!WARNING]
 > **VPN 与 LAN API 不能在当前发布版本中同时使用。** 测试 OpenAI、Codex 等国外模型的账号额度时，在实际发起测试的设备上开启所需 VPN/代理；需要手机将 LAN API 转发给电脑时，手机和电脑都必须关闭全部 VPN、代理客户端和 Windows 系统代理。否则可能出现 `HTTP 502`、超时或获取模型失败。详见 [LAN API 与 VPN 排障说明](docs/troubleshooting-lan-api-502.md)。
 
+## 界面预览
+
+<img src="docs/images/mobile-account-actions.png" width="520" alt="Android 账号操作界面">
+
+<img src="docs/images/mobile-lan-api-setup.png" width="520" alt="Android 局域网 API 界面">
+
 ## 下载与安装
 
 请从 [GitHub Releases](https://github.com/nhzhongguo/online-testing-account/releases) 下载当前版本。

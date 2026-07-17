@@ -52,6 +52,12 @@
 > [!WARNING]
 > **VPN/proxy use and LAN API forwarding cannot be combined in the current release.** To check quota or test OpenAI, Codex, and other foreign models, enable the required VPN/proxy on the device making the request. To forward the phone's LAN API to a computer, turn off every VPN/proxy client on both the phone and computer, including the Windows system proxy. Otherwise model discovery can fail with `HTTP 502` or a timeout. See [LAN API and VPN troubleshooting](docs/troubleshooting-lan-api-502.md).
 
+## Screenshots
+
+<img src="docs/images/mobile-account-actions.png" width="520" alt="Android account actions">
+
+<img src="docs/images/mobile-lan-api-setup.png" width="520" alt="Android LAN API setup">
+
 ## Download and installation
 
 Download the current release from [GitHub Releases](https://github.com/nhzhongguo/online-testing-account/releases).
