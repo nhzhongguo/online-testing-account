@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, safeStorage } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -9,6 +9,33 @@ const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_FOLDER_FILES = 10_000;
 const FOLDER_BATCH_SIZE = 25;
 const folderImports = new Map();
+const VAULT_FILE_NAME = 'encrypted-workspace.bin';
+
+function vaultPath() {
+  return path.join(app.getPath('userData'), VAULT_FILE_NAME);
+}
+
+async function readWorkspace() {
+  if (!safeStorage.isEncryptionAvailable()) return { available: false, workspace: null };
+  try {
+    const encrypted = await fs.readFile(vaultPath());
+    const decoded = safeStorage.decryptString(encrypted);
+    const workspace = JSON.parse(decoded);
+    return { available: true, workspace: workspace && typeof workspace === 'object' ? workspace : null };
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return { available: true, workspace: null };
+    return { available: true, workspace: null, error: '无法读取已保存的本地工作区' };
+  }
+}
+
+async function writeWorkspace(workspace) {
+  if (!safeStorage.isEncryptionAvailable()) return { saved: false, available: false };
+  if (!workspace || typeof workspace !== 'object') return { saved: false, available: true };
+  const content = JSON.stringify(workspace);
+  if (content.length > 50 * 1024 * 1024) return { saved: false, available: true };
+  await fs.writeFile(vaultPath(), safeStorage.encryptString(content));
+  return { saved: true, available: true };
+}
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'developers.openai.com',
@@ -32,6 +59,12 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  window.webContents.on('will-navigate', (event, url) => {
+    const isDevelopmentPage = Boolean(process.env.VITE_DEV_SERVER_URL) && url === process.env.VITE_DEV_SERVER_URL;
+    if (!isDevelopmentPage && !url.startsWith('file:')) event.preventDefault();
+  });
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
@@ -148,6 +181,24 @@ ipcMain.handle('accounts:read-folder-batch', async (_event, importId) => {
 
 ipcMain.handle('accounts:validate-credential', async (_event, input) => validateCredential(input));
 ipcMain.handle('network:check-region', async () => checkNetworkRegion());
+ipcMain.handle('app:open-external', async (_event, url) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:' && ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname)) {
+      await shell.openExternal(parsed.toString());
+      return { opened: true };
+    }
+  } catch {
+    // Refuse malformed or unapproved destinations.
+  }
+  return { opened: false };
+});
+ipcMain.handle('workspace:load', async () => readWorkspace());
+ipcMain.handle('workspace:save', async (_event, workspace) => writeWorkspace(workspace));
+ipcMain.handle('workspace:clear', async () => {
+  try { await fs.unlink(vaultPath()); } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
+  return { cleared: true };
+});
 
 ipcMain.handle('accounts:save-report', async (_event, content) => {
   if (typeof content !== 'string' || content.length > 20 * 1024 * 1024) {

@@ -2,15 +2,19 @@ import {
   Activity,
   AlertCircle,
   Ban,
+  Bell,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
   ClipboardPaste,
+  Copy,
   Compass,
   Download,
+  HardDrive,
   ExternalLink,
   FileJson,
+  FileText,
   FolderOpen,
   Gauge,
   Globe2,
@@ -21,10 +25,12 @@ import {
   LockKeyhole,
   PanelRight,
   Pause,
+  Pencil,
   Play,
   RefreshCw,
   Scale,
   Search,
+  ServerCog,
   ShieldCheck,
   ShieldX,
   Trash2,
@@ -36,6 +42,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { CapacitorHttp, registerPlugin } from '@capacitor/core';
 import {
   createSub2ApiExport,
   importAccountText,
@@ -104,6 +111,152 @@ const GUIDE_STEPS: GuideStep[] = [
 
 const PAGE_SIZE = 100;
 const IMPORT_BATCH_SIZE = 25;
+const WORKSPACE_STORAGE_KEY = 'ota-workspace-v1';
+const CURRENT_VERSION = '0.8.4';
+const RELEASE_API_URL = 'https://api.github.com/repos/nhzhongguo/online-testing-account/releases/latest';
+
+interface ReleaseUpdate {
+  version: string;
+  name: string;
+  notes: string;
+  url: string;
+  publishedAt?: string;
+}
+
+function isNewerVersion(candidate: string, current: string) {
+  const parse = (value: string) => value.replace(/^v/i, '').split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const candidateParts = parse(candidate);
+  const currentParts = parse(current);
+  for (let index = 0; index < Math.max(candidateParts.length, currentParts.length); index += 1) {
+    if ((candidateParts[index] || 0) !== (currentParts[index] || 0)) return (candidateParts[index] || 0) > (currentParts[index] || 0);
+  }
+  return false;
+}
+
+interface LanApiPlugin {
+  start(options: { credential: string; credentialsJson?: string; token: string; port: number }): Promise<{ ip: string; port: number }>;
+  update(options: { credentialsJson: string }): Promise<void>;
+  test(): Promise<LanApiTestResult>;
+  stop(): Promise<void>;
+  status(): Promise<{ running: boolean; ip: string; port: number }>;
+}
+
+interface LanApiTestResult {
+  models: string[];
+  selectedModel: string;
+  protocol: string;
+  upstreamName: string;
+  status: number;
+  elapsedMs: number;
+  response?: string;
+  error?: string;
+}
+
+type LanApiTestState =
+  | { state: 'idle' }
+  | { state: 'loading' }
+  | { state: 'success'; result: LanApiTestResult }
+  | { state: 'error'; error: string; result?: LanApiTestResult };
+
+const LanApi = registerPlugin<LanApiPlugin>('LanApi');
+
+interface SavedWorkspace {
+  version: 1;
+  accounts: AccountRecord[];
+  issues: ImportIssue[];
+  selectedId?: string;
+  apiProviders?: ApiProvider[];
+  lanDisabledAccountIds?: string[];
+}
+
+type ApiProviderProtocol = 'responses' | 'chat_completions';
+
+interface ApiProvider {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  protocol: ApiProviderProtocol;
+  model: string;
+  enabled: boolean;
+}
+
+const EMPTY_API_PROVIDER: ApiProvider = {
+  id: '',
+  name: '',
+  baseUrl: '',
+  apiKey: '',
+  protocol: 'responses',
+  model: '',
+  enabled: true,
+};
+
+type ProviderModelFetchState =
+  | { state: 'idle' }
+  | { state: 'loading' }
+  | { state: 'success'; count: number }
+  | { state: 'error'; message: string };
+
+function normalizeApiKey(value: string) {
+  return value.trim().replace(/^Bearer\s+/i, '').replace(/\s+/g, '');
+}
+
+function normalizeApiProviders(providers: ApiProvider[]) {
+  let hasEnabledProvider = false;
+  return providers.map((provider) => {
+    const enabled = provider.enabled !== false && !hasEnabledProvider;
+    if (enabled) hasEnabledProvider = true;
+    return { ...provider, apiKey: normalizeApiKey(provider.apiKey || ''), enabled };
+  });
+}
+
+function providerModelsEndpoint(baseUrl: string) {
+  const normalized = baseUrl.trim().replace(/\/+$/, '');
+  return /\/v1$/i.test(normalized) ? `${normalized}/models` : `${normalized}/v1/models`;
+}
+
+function parseProviderModels(value: unknown): string[] {
+  if (typeof value === 'string') {
+    try { return parseProviderModels(JSON.parse(value)); } catch { return []; }
+  }
+  let entries: unknown[] = [];
+  if (Array.isArray(value)) entries = value;
+  else if (value && typeof value === 'object') {
+    const payload = value as Record<string, unknown>;
+    if (Array.isArray(payload.data)) entries = payload.data;
+    else if (Array.isArray(payload.models)) entries = payload.models;
+  }
+  const models = new Set<string>();
+  for (const entry of entries) {
+    if (typeof entry === 'string') {
+      if (entry.trim()) models.add(entry.trim());
+      continue;
+    }
+    if (!entry || typeof entry !== 'object') continue;
+    const model = entry as Record<string, unknown>;
+    if (model.supported_in_api === false || String(model.visibility || '').toLowerCase() === 'hide') continue;
+    const id = [model.id, model.slug, model.model, model.name].find((candidate) => typeof candidate === 'string' && candidate.trim());
+    if (typeof id === 'string') models.add(id.trim());
+  }
+  return Array.from(models);
+}
+
+function isLikelyTextProviderModel(model: string) {
+  return !/(?:^|[-_./])(auto|router|image|video|audio|tts|asr|realtime|embedding|moderation|whisper)(?:$|[-_./])/i.test(model);
+}
+
+function loadSavedWorkspace(): SavedWorkspace | undefined {
+  if (window.accountPulse) return undefined;
+  try {
+    const saved = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if (!saved) return undefined;
+    const parsed = JSON.parse(saved) as SavedWorkspace;
+    if (parsed.version !== 1 || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.issues)) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
 
 interface ImportAggregate {
   accounts: AccountRecord[];
@@ -229,13 +382,21 @@ function App() {
   const { t, i18n } = useTranslation();
   const isEnglish = i18n.resolvedLanguage === 'en';
   const nativeMobile = isNativeMobile();
-  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
-  const [issues, setIssues] = useState<ImportIssue[]>([]);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [savedWorkspace] = useState(loadSavedWorkspace);
+  const [accounts, setAccounts] = useState<AccountRecord[]>(() => savedWorkspace?.accounts ?? []);
+  const [issues, setIssues] = useState<ImportIssue[]>(() => savedWorkspace?.issues ?? []);
+  const [apiProviders, setApiProviders] = useState<ApiProvider[]>(() => normalizeApiProviders(savedWorkspace?.apiProviders ?? []));
+  const [lanDisabledAccountIds, setLanDisabledAccountIds] = useState<string[]>(() => savedWorkspace?.lanDisabledAccountIds ?? []);
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => savedWorkspace?.selectedId);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
+  const [providerOpen, setProviderOpen] = useState(false);
+  const [providerDraft, setProviderDraft] = useState<ApiProvider>(EMPTY_API_PROVIDER);
+  const [providerError, setProviderError] = useState<string>();
+  const [providerModels, setProviderModels] = useState<string[]>([]);
+  const [providerModelFetch, setProviderModelFetch] = useState<ProviderModelFetchState>({ state: 'idle' });
   const [validateOpen, setValidateOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [openSourceOpen, setOpenSourceOpen] = useState(false);
@@ -256,11 +417,24 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [guideStep, setGuideStep] = useState<number | null>(null);
   const [guideRect, setGuideRect] = useState<GuideRect>();
-  const [mobileView, setMobileView] = useState<'accounts' | 'details'>('accounts');
+  const [mobileView, setMobileView] = useState<'accounts' | 'details' | 'lan'>('accounts');
   const [showStartup, setShowStartup] = useState(true);
+  const [lanApi, setLanApi] = useState<{ running: boolean; ip: string; port: number; token?: string }>({ running: false, ip: '', port: 8787 });
+  const [lanApiPort, setLanApiPort] = useState(8787);
+  const [lanPoolOpen, setLanPoolOpen] = useState(false);
+  const [lanPoolUpdating, setLanPoolUpdating] = useState(false);
+  const [lanApiTest, setLanApiTest] = useState<LanApiTestState>({ state: 'idle' });
+  const [update, setUpdate] = useState<ReleaseUpdate>();
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [workspaceState, setWorkspaceState] = useState<'loading' | 'secured' | 'temporary' | 'unavailable'>(() => window.accountPulse ? 'loading' : 'temporary');
+  const [workspaceUpdatedAt, setWorkspaceUpdatedAt] = useState<number>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const validationControlRef = useRef(new ValidationController());
+  const lanApiTestRequestRef = useRef(0);
+  const lanApiTestInFlightRef = useRef(false);
   const deferredQuery = useDeferredValue(query);
   const isValidating = validationRunState !== 'idle';
   const currentLanguage = i18n.resolvedLanguage;
@@ -281,6 +455,106 @@ function App() {
     const timer = window.setTimeout(() => setShowStartup(false), 1_800);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(() => setNotice(undefined), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    if (!nativeMobile) return;
+    let active = true;
+    void LanApi.status().then((result) => {
+      if (!active) return;
+      setLanApi({ running: result.running, ip: result.ip, port: result.port || 8787 });
+      if (result.port) setLanApiPort(result.port);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [nativeMobile]);
+
+  async function checkForUpdates(manual = false) {
+    if (isCheckingUpdate) return;
+    setIsCheckingUpdate(true);
+    try {
+      const response = await fetch(RELEASE_API_URL, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!response.ok) throw new Error(String(response.status));
+      const release = await response.json() as { tag_name?: string; name?: string; body?: string; html_url?: string; published_at?: string; draft?: boolean; prerelease?: boolean };
+      const version = release.tag_name?.replace(/^v/i, '') || '';
+      if (!release.draft && !release.prerelease && version && release.html_url && isNewerVersion(version, CURRENT_VERSION)) {
+        setUpdate({ version, name: release.name || `v${version}`, notes: release.body || '', url: release.html_url, publishedAt: release.published_at });
+        setUpdateOpen(true);
+      } else if (manual) {
+        setNotice(t('updates.current', { version: CURRENT_VERSION }));
+      }
+    } catch {
+      if (manual) setNotice(t('updates.failed'));
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void checkForUpdates(); }, 2_500);
+    return () => window.clearTimeout(timer);
+  // The automatic check runs only once after startup.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!window.accountPulse) return;
+    let active = true;
+    void window.accountPulse.loadWorkspace().then((result) => {
+      if (!active) return;
+      if (!result.available) { setWorkspaceState('unavailable'); return; }
+      const workspace = result.workspace as { accounts?: AccountRecord[]; issues?: ImportIssue[]; apiProviders?: ApiProvider[]; lanDisabledAccountIds?: string[]; updatedAt?: number } | null;
+      if (workspace?.accounts && Array.isArray(workspace.accounts)) {
+        setAccounts(workspace.accounts);
+        setIssues(Array.isArray(workspace.issues) ? workspace.issues : []);
+        setApiProviders(normalizeApiProviders(Array.isArray(workspace.apiProviders) ? workspace.apiProviders : []));
+        setLanDisabledAccountIds(Array.isArray(workspace.lanDisabledAccountIds) ? workspace.lanDisabledAccountIds : []);
+        setSelectedId(workspace.accounts[0]?.id);
+        setWorkspaceUpdatedAt(workspace.updatedAt);
+      }
+      setWorkspaceState('secured');
+      if (result.error) setNotice(result.error);
+    }).catch(() => { if (active) setWorkspaceState('unavailable'); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!window.accountPulse || workspaceState !== 'secured') return undefined;
+    const timer = window.setTimeout(() => {
+      const updatedAt = Date.now();
+      void window.accountPulse?.saveWorkspace({ accounts, issues, apiProviders, lanDisabledAccountIds, updatedAt }).then((result) => {
+        if (result.saved) setWorkspaceUpdatedAt(updatedAt);
+        else setWorkspaceState('unavailable');
+      }).catch(() => setWorkspaceState('unavailable'));
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [accounts, issues, apiProviders, lanDisabledAccountIds, workspaceState]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (event.key.toLowerCase() === 'f') { event.preventDefault(); searchInputRef.current?.focus(); }
+      if (event.key.toLowerCase() === 'i' && !isImporting && !isValidating) { event.preventDefault(); void handlePickFiles(); }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  // handlePickFiles is intentionally omitted: the listener only needs the current busy state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isImporting, isValidating]);
+
+  useEffect(() => {
+    if (window.accountPulse) return;
+    try {
+      const workspace: SavedWorkspace = { version: 1, accounts, issues, selectedId, apiProviders, lanDisabledAccountIds };
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
+    } catch {
+      // The active workspace remains usable if browser storage is unavailable or full.
+    }
+  }, [accounts, issues, selectedId, apiProviders, lanDisabledAccountIds]);
 
   const stats = useMemo(() => {
     let alive = 0;
@@ -335,6 +609,32 @@ function App() {
     () => accounts.find((account) => account.id === selectedId) ?? visibleAccounts[0],
     [accounts, selectedId, visibleAccounts],
   );
+  const lanEligibleAccounts = useMemo(
+    () => accounts.filter((account) => account.credentialKind === 'oauth' || account.credentialKind === 'api_key'),
+    [accounts],
+  );
+  const lanDisabledAccountIdSet = useMemo(
+    () => new Set(lanDisabledAccountIds),
+    [lanDisabledAccountIds],
+  );
+  const activeApiProvider = useMemo(
+    () => apiProviders.find((provider) => provider.enabled),
+    [apiProviders],
+  );
+  const lanApiAccounts = useMemo(
+    () => activeApiProvider ? [] : lanEligibleAccounts.filter((account) => !lanDisabledAccountIdSet.has(account.id)),
+    [activeApiProvider, lanDisabledAccountIdSet, lanEligibleAccounts],
+  );
+  const enabledApiProviders = useMemo(
+    () => activeApiProvider ? [activeApiProvider] : [],
+    [activeApiProvider],
+  );
+  const lanApiPoolCount = lanApiAccounts.length + enabledApiProviders.length;
+  const lanApiPoolTotal = lanEligibleAccounts.length + apiProviders.length;
+  const lanApiTestPoolKey = useMemo(() => JSON.stringify({
+    accounts: lanApiAccounts.map((account) => [account.id, account.credential, account.accountId, account.credentialKind]),
+    providers: enabledApiProviders.map((provider) => [provider.id, provider.baseUrl, provider.apiKey, provider.protocol, provider.model]),
+  }), [enabledApiProviders, lanApiAccounts]);
   const onlineCandidates = useMemo(
     () => accounts.filter((account) => !['checking', 'alive'].includes(account.onlineStatus)),
     [accounts],
@@ -343,6 +643,15 @@ function App() {
     () => accounts.filter((account) => account.onlineStatus === 'unauthorized'),
     [accounts],
   );
+  const actionableCount = stats.unauthorized + stats.rateLimited + accounts.filter((account) => ['forbidden', 'server_error', 'network_error'].includes(account.onlineStatus)).length;
+
+  useEffect(() => {
+    lanApiTestRequestRef.current += 1;
+    lanApiTestInFlightRef.current = false;
+    // A result from a previous upstream pool must not remain visible.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLanApiTest({ state: 'idle' });
+  }, [lanApiTestPoolKey]);
 
   useEffect(() => {
     if (guideStep === null) return undefined;
@@ -583,8 +892,6 @@ function App() {
   }
 
   async function runOnlineValidation() {
-    const network = await checkCurrentNetwork();
-    if (!network.allowed) return;
     setValidateOpen(false);
     validationControlRef.current.reset();
     setValidationRunState('running');
@@ -658,12 +965,6 @@ function App() {
   async function refreshSelectedQuota() {
     if (!selected || selected.credentialKind !== 'oauth') return;
     setIsQuotaRefreshing(true);
-    const network = await checkCurrentNetwork();
-    if (!network.allowed) {
-      setNotice(network.detail);
-      setIsQuotaRefreshing(false);
-      return;
-    }
     try {
       const result = await requestValidation(validationInputFor(selected));
       setAccounts((current) => current.map((account) => account.id === selected.id
@@ -719,6 +1020,302 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
+  async function exportValidationReport() {
+    const generatedAt = new Date().toISOString();
+    const content = JSON.stringify({ schemaVersion: 1, generatedAt, summary: { total: accounts.length, ...stats, importIssues: issues.length }, accounts: accounts.map((account) => ({ fingerprint: account.fingerprint, email: account.email, format: account.format, credentialKind: account.credentialKind, sourceName: account.sourceName, onlineStatus: account.onlineStatus, onlineDetail: account.onlineDetail, checkedAt: account.checkedAt, quota: account.quota })) }, null, 2);
+    if (window.accountPulse) {
+      const result = await window.accountPulse.saveReport(content);
+      if (result.saved) setNotice(t('notices.reportExported'));
+      return;
+    }
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = `online-testing-account-report-${generatedAt.slice(0, 10)}.json`; anchor.click();
+    URL.revokeObjectURL(url);
+    setNotice(t('notices.reportExported'));
+  }
+
+  function openNewApiProvider() {
+    setProviderDraft({ ...EMPTY_API_PROVIDER, enabled: !activeApiProvider });
+    setProviderError(undefined);
+    setProviderModels([]);
+    setProviderModelFetch({ state: 'idle' });
+    setProviderOpen(true);
+  }
+
+  function openApiProvider(provider: ApiProvider) {
+    setProviderDraft({ ...provider });
+    setProviderError(undefined);
+    setProviderModels([]);
+    setProviderModelFetch({ state: 'idle' });
+    setProviderOpen(true);
+  }
+
+  function createLanApiPool(accountPool: AccountRecord[], providerPool: ApiProvider[]) {
+    const provider = providerPool.find((item) => item.enabled);
+    if (provider) {
+      return [{
+        credential: provider.apiKey,
+        baseUrl: provider.baseUrl,
+        protocol: provider.protocol,
+        model: provider.model,
+        name: provider.name,
+        kind: 'provider',
+      }];
+    }
+    const primary = selected && accountPool.some((account) => account.id === selected.id)
+      ? selected
+      : accountPool[0];
+    const orderedAccounts = primary
+      ? [primary, ...accountPool.filter((account) => account.id !== primary.id)]
+      : accountPool;
+    return orderedAccounts.map((account) => ({
+        credential: account.credential,
+        accountId: account.accountId,
+        name: account.email || account.accountId || account.id,
+        kind: account.credentialKind,
+      }));
+  }
+
+  async function fetchApiProviderModels() {
+    const baseUrl = providerDraft.baseUrl.trim().replace(/\/+$/, '');
+    const apiKey = normalizeApiKey(providerDraft.apiKey);
+    if (!baseUrl || !apiKey) {
+      setProviderModelFetch({ state: 'error', message: t('providers.fetchModelsFirst') });
+      return;
+    }
+    try {
+      const endpoint = providerModelsEndpoint(baseUrl);
+      const parsed = new URL(endpoint);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(t('providers.invalidUrl'));
+      setProviderDraft((current) => ({ ...current, baseUrl, apiKey }));
+      setProviderModels([]);
+      setProviderError(undefined);
+      setProviderModelFetch({ state: 'loading' });
+      const response = await CapacitorHttp.get({
+        url: endpoint,
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+        connectTimeout: 15_000,
+        readTimeout: 30_000,
+      });
+      if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
+      const models = parseProviderModels(response.data);
+      if (!models.length) throw new Error(t('providers.noModels'));
+      setProviderModels(models);
+      setProviderDraft((current) => {
+        const currentModel = current.model.trim();
+        const preferred = models.includes(currentModel)
+          ? currentModel
+          : models.find(isLikelyTextProviderModel) || models[0];
+        return { ...current, baseUrl, apiKey, model: preferred };
+      });
+      setProviderModelFetch({ state: 'success', count: models.length });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : t('details.unknown');
+      setProviderModelFetch({ state: 'error', message: t('providers.fetchModelsFailed', { message }) });
+    }
+  }
+
+  function resetLanApiTest() {
+    lanApiTestRequestRef.current += 1;
+    lanApiTestInFlightRef.current = false;
+    setLanApiTest({ state: 'idle' });
+  }
+
+  async function testLanApiConnection() {
+    if (!nativeMobile || !lanApi.running || lanApiTestInFlightRef.current) return;
+    const requestId = lanApiTestRequestRef.current + 1;
+    lanApiTestRequestRef.current = requestId;
+    lanApiTestInFlightRef.current = true;
+    setLanApiTest({ state: 'loading' });
+    try {
+      const result = await LanApi.test();
+      if (lanApiTestRequestRef.current !== requestId) return;
+      if (result.status >= 200 && result.status < 300 && !result.error) {
+        setLanApiTest({ state: 'success', result });
+      } else {
+        setLanApiTest({
+          state: 'error',
+          error: result.error || (result.status ? `${t('updates.testFailed')} (HTTP ${result.status})` : t('updates.testFailed')),
+          result,
+        });
+      }
+    } catch (error) {
+      if (lanApiTestRequestRef.current !== requestId) return;
+      setLanApiTest({
+        state: 'error',
+        error: error instanceof Error && error.message ? error.message : t('updates.testFailed'),
+      });
+    } finally {
+      if (lanApiTestRequestRef.current === requestId) lanApiTestInFlightRef.current = false;
+    }
+  }
+
+  async function applyLanPoolConfiguration(nextProviders: ApiProvider[], nextDisabledAccountIds: string[], successNotice: string) {
+    const normalizedProviders = normalizeApiProviders(nextProviders);
+    const disabledIds = new Set(nextDisabledAccountIds);
+    const nextEnabledProviders = normalizedProviders.filter((provider) => provider.enabled).slice(0, 1);
+    const nextAccounts = nextEnabledProviders.length
+      ? []
+      : lanEligibleAccounts.filter((account) => !disabledIds.has(account.id));
+    const pool = createLanApiPool(nextAccounts, nextEnabledProviders);
+    if (nativeMobile && lanApi.running) {
+      setLanPoolUpdating(true);
+      try {
+        if (pool.length) {
+          await LanApi.update({ credentialsJson: JSON.stringify(pool) });
+        } else {
+          await LanApi.stop();
+          setLanApi((current) => ({ ...current, running: false, token: undefined }));
+        }
+      } catch {
+        setNotice(t('updates.poolUpdateFailed'));
+        return false;
+      } finally {
+        setLanPoolUpdating(false);
+      }
+    }
+    resetLanApiTest();
+    setApiProviders(normalizedProviders);
+    setLanDisabledAccountIds(nextDisabledAccountIds);
+    setNotice(pool.length ? successNotice : t('updates.poolEmptyStopped'));
+    return true;
+  }
+
+  async function saveApiProvider() {
+    const name = providerDraft.name.trim();
+    const baseUrl = providerDraft.baseUrl.trim().replace(/\/+$/, '');
+    const apiKey = normalizeApiKey(providerDraft.apiKey);
+    const model = providerDraft.model.trim();
+    try {
+      const parsed = new URL(baseUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocol');
+    } catch {
+      setProviderError(t('providers.invalidUrl'));
+      return;
+    }
+    if (!name || !apiKey || !model) {
+      setProviderError(t('providers.required'));
+      return;
+    }
+    const saved: ApiProvider = {
+      ...providerDraft,
+      id: providerDraft.id || `provider-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      baseUrl,
+      apiKey,
+      model,
+    };
+    const conflictingProvider = saved.enabled
+      ? apiProviders.find((provider) => provider.enabled && provider.id !== saved.id)
+      : undefined;
+    if (conflictingProvider) {
+      setProviderError(t('providers.disableActiveFirst', { name: conflictingProvider.name }));
+      return;
+    }
+    const nextProviders = apiProviders.some((provider) => provider.id === saved.id)
+      ? apiProviders.map((provider) => provider.id === saved.id ? saved : provider)
+      : [...apiProviders, saved];
+    if (!await applyLanPoolConfiguration(nextProviders, lanDisabledAccountIds, t('providers.saved'))) return;
+    setProviderOpen(false);
+    setProviderError(undefined);
+  }
+
+  async function deleteApiProvider(id: string) {
+    await applyLanPoolConfiguration(apiProviders.filter((provider) => provider.id !== id), lanDisabledAccountIds, t('providers.deleted'));
+  }
+
+  async function setLanUpstreamEnabled(kind: 'account' | 'provider', id: string, enabled: boolean) {
+    if (kind === 'provider' && enabled) {
+      const conflictingProvider = apiProviders.find((provider) => provider.enabled && provider.id !== id);
+      if (conflictingProvider) {
+        setNotice(t('providers.disableActiveFirst', { name: conflictingProvider.name }));
+        return;
+      }
+    }
+    const nextProviders = kind === 'provider'
+      ? apiProviders.map((provider) => provider.id === id ? { ...provider, enabled } : provider)
+      : apiProviders;
+    const nextDisabledAccountIds = kind === 'account'
+      ? enabled
+        ? lanDisabledAccountIds.filter((accountId) => accountId !== id)
+        : Array.from(new Set([...lanDisabledAccountIds, id]))
+      : lanDisabledAccountIds;
+    await applyLanPoolConfiguration(nextProviders, nextDisabledAccountIds, t('updates.poolUpdated'));
+  }
+
+  async function toggleLanApi() {
+    if (!nativeMobile) return;
+    if (lanApi.running) {
+      try {
+        await LanApi.stop();
+        setLanApi((current) => ({ ...current, running: false, token: undefined }));
+        resetLanApiTest();
+        setNotice(t('updates.stopped'));
+      } catch {
+        setNotice(t('updates.stopFailed'));
+      }
+      return;
+    }
+    const pool = createLanApiPool(lanApiAccounts, enabledApiProviders);
+    if (!pool.length) {
+      setNotice(t('updates.selectApiKey'));
+      return;
+    }
+    try {
+      const values = new Uint32Array(6);
+      crypto.getRandomValues(values);
+      const token = `sk-phone-${Array.from(values, (value) => value.toString(16).padStart(8, '0')).join('')}`;
+      const port = Math.max(1024, Math.min(65535, Math.floor(lanApiPort || 8787)));
+      const result = await LanApi.start({ credential: pool[0].credential, credentialsJson: JSON.stringify(pool), token, port });
+      setLanApi({ running: true, ip: result.ip, port: result.port, token });
+      setLanApiPort(result.port);
+      resetLanApiTest();
+      setNotice(t('updates.started'));
+    } catch (error) {
+      setNotice(t('updates.startFailed', { message: error instanceof Error ? error.message : t('details.unknown') }));
+    }
+  }
+
+  async function copyLanApiValue(value?: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setNotice(t('updates.copied'));
+    } catch {
+      setNotice(t('updates.copyFailed'));
+    }
+  }
+
+  async function openUpdateDownload() {
+    if (!update) return;
+    if (window.accountPulse) {
+      await window.accountPulse.openExternal(update.url);
+      return;
+    }
+    window.open(update.url, '_blank', 'noopener,noreferrer');
+  }
+
+  function exportAuditReport() {
+    const content = JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      totals: { total: accounts.length, ...stats },
+      statuses: accounts.map(({ email, fingerprint, format, credentialKind, onlineStatus, onlineDetail, checkedAt, quota }) => ({ email, fingerprint, format, credentialKind, onlineStatus, onlineDetail, checkedAt, quota })),
+    }, null, 2);
+    if (window.accountPulse) {
+      void window.accountPulse.saveReport(content).then((result) => { if (result.saved) setNotice('脱敏审计报告已导出'); });
+      return;
+    }
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `account-validation-audit-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   function deleteCredentialFailures() {
     const failedIds = new Set(credentialFailures.map((account) => account.id));
     setAccounts((current) => current.filter((account) => !failedIds.has(account.id)));
@@ -741,8 +1338,12 @@ function App() {
   function clearAll() {
     setAccounts([]);
     setIssues([]);
+    setApiProviders([]);
+    setLanDisabledAccountIds([]);
     setSelectedId(undefined);
     setNotice(undefined);
+    if (window.accountPulse) void window.accountPulse.clearWorkspace();
+    else localStorage.removeItem(WORKSPACE_STORAGE_KEY);
   }
 
   return (
@@ -786,10 +1387,14 @@ function App() {
           <button className="open-source-button" onClick={() => setOpenSourceOpen(true)}>
             <Scale aria-hidden="true" />{t('header.openSource')}
           </button>
+          <button className={`open-source-button update-button ${update ? 'available' : ''}`} onClick={() => update ? setUpdateOpen(true) : void checkForUpdates(true)} disabled={isCheckingUpdate} title={t('updates.check')}>
+            <Bell aria-hidden="true" />{update ? t('updates.available') : t('updates.check')}
+          </button>
           <button className="open-source-button language-button" onClick={() => void i18n.changeLanguage(isEnglish ? 'zh' : 'en')} title={t('header.switchLanguage')}>
             <Languages aria-hidden="true" />{isEnglish ? '中文' : 'EN'}
           </button>
           <span className="privacy-state"><ShieldCheck aria-hidden="true" /> {t('header.privacy')}</span>
+          <span className={`workspace-state ${workspaceState}`}><span className="runtime-dot" />{workspaceState === 'loading' ? '正在恢复工作区' : workspaceState === 'secured' ? `本地加密保存${workspaceUpdatedAt ? ' · 已同步' : ''}` : workspaceState === 'temporary' ? '临时会话 · 不保存凭据' : '安全存储不可用'}</span>
           <span className="runtime-state">
             <span className={`runtime-dot ${window.accountPulse ? 'desktop' : nativeMobile ? 'mobile' : 'web'}`} />
             {window.accountPulse ? t('header.desktop') : nativeMobile ? t('header.mobile') : t('header.preview')}
@@ -814,9 +1419,19 @@ function App() {
         <div className="metric-compact"><FileJson /><span>{t('metrics.total')}</span><strong>{accounts.length}</strong></div>
       </section>
 
-      <div className="mobile-view-switch" role="tablist" aria-label={t('mobile.accounts')}>
+      <section className="operations-strip" aria-label={t('operations.label')}>
+        <div className="workspace-state"><HardDrive aria-hidden="true" /><span>{t('operations.localState')}</span></div>
+        <div className={`operations-alert ${actionableCount ? 'attention' : 'clear'}`}>
+          {actionableCount ? <AlertCircle aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+          <span>{actionableCount ? t('operations.attention', { count: actionableCount }) : t('operations.clear')}</span>
+        </div>
+        {isValidating && <div className="operations-progress"><LoaderCircle className="spin" /><span>{t('operations.running', validationProgress)}</span><i><b style={{ width: `${validationProgress.total ? (validationProgress.done / validationProgress.total) * 100 : 0}%` }} /></i></div>}
+      </section>
+
+      <div className={`mobile-view-switch ${nativeMobile ? 'has-lan' : ''}`} role="tablist" aria-label={t('mobile.accounts')}>
         <button role="tab" aria-selected={mobileView === 'accounts'} className={mobileView === 'accounts' ? 'active' : ''} onClick={() => setMobileView('accounts')}><ListFilter />{t('mobile.accounts')}</button>
         <button role="tab" aria-selected={mobileView === 'details'} className={mobileView === 'details' ? 'active' : ''} onClick={() => setMobileView('details')} disabled={!selected}><PanelRight />{t('mobile.details')}</button>
+        {nativeMobile && <button role="tab" aria-selected={mobileView === 'lan'} className={mobileView === 'lan' ? 'active' : ''} onClick={() => setMobileView('lan')}><Globe2 />{t('mobile.api')}</button>}
       </div>
 
       <main className="workspace" data-mobile-view={mobileView}>
@@ -833,6 +1448,9 @@ function App() {
               <button className="icon-button" onClick={() => setPasteOpen(true)} disabled={isImporting || isValidating} title={t('actions.pasteJson')} aria-label={t('actions.pasteJson')}>
                 <ClipboardPaste />
               </button>
+              {nativeMobile && <button className="button secondary" onClick={openNewApiProvider} disabled={isImporting || isValidating}>
+                <ServerCog />{t('providers.add')}
+              </button>}
               {validationRunState === 'idle' ? (
                 <button
                   className="button verify validation-control idle"
@@ -868,16 +1486,34 @@ function App() {
               <button className="button secondary" data-guide="export" onClick={() => void exportRetainedAccounts()} disabled={!accounts.length || isImporting || isValidating} title={t('actions.exportRemaining')}>
                 <Download />{t('actions.exportRemaining')}
               </button>
-              <button className="icon-button danger" onClick={clearAll} disabled={isImporting || isValidating || (!accounts.length && !issues.length)} title={t('actions.clear')} aria-label={t('actions.clear')}>
+              <button className="icon-button" onClick={() => void exportValidationReport()} disabled={!accounts.length || isImporting || isValidating} title={t('actions.exportReport')} aria-label={t('actions.exportReport')}><FileText /></button>
+              <button className="icon-button" onClick={exportAuditReport} disabled={!accounts.length || isImporting || isValidating} title="导出脱敏审计报告" aria-label="导出脱敏审计报告"><FileJson /></button>
+              <button className="icon-button danger" onClick={clearAll} disabled={isImporting || isValidating || (!accounts.length && !issues.length && !apiProviders.length)} title={t('actions.clear')} aria-label={t('actions.clear')}>
                 <Trash2 />
               </button>
             </div>
             <label className="search-box" data-guide="search">
               <Search aria-hidden="true" />
-              <input value={query} onChange={(event) => { setQuery(event.target.value); setCurrentPage(1); setSelectedId(undefined); }} placeholder={t('search.placeholder')} />
+              <input ref={searchInputRef} value={query} onChange={(event) => { setQuery(event.target.value); setCurrentPage(1); setSelectedId(undefined); }} placeholder={t('search.placeholder')} />
               {query && <button onClick={() => { setQuery(''); setCurrentPage(1); setSelectedId(undefined); }} aria-label={t('search.clear')}><X /></button>}
             </label>
           </div>
+
+          {nativeMobile && apiProviders.length > 0 && <section className="custom-provider-list" aria-label={t('providers.list')}>
+            <div className="custom-provider-list-head"><ServerCog /><strong>{t('providers.list')}</strong><span>{apiProviders.length}</span></div>
+            <div className="custom-provider-items">
+              {apiProviders.map((provider) => <article className="custom-provider-item" key={provider.id}>
+                <div className="custom-provider-main">
+                  <strong>{provider.name}</strong>
+                  <code>{provider.baseUrl}</code>
+                  <span>{provider.protocol === 'responses' ? 'Responses API' : 'Chat Completions'} · {provider.model}</span>
+                </div>
+                <label className="custom-provider-enabled"><input type="checkbox" checked={provider.enabled} disabled={lanPoolUpdating || Boolean(activeApiProvider && activeApiProvider.id !== provider.id)} onChange={(event) => void setLanUpstreamEnabled('provider', provider.id, event.target.checked)} /><span>{provider.enabled ? t('providers.enabled') : t('providers.disabled')}</span></label>
+                <button className="icon-button" onClick={() => openApiProvider(provider)} title={t('providers.edit')} aria-label={t('providers.edit')}><Pencil /></button>
+                <button className="icon-button danger" onClick={() => void deleteApiProvider(provider.id)} disabled={lanPoolUpdating} title={t('providers.delete')} aria-label={t('providers.delete')}><Trash2 /></button>
+              </article>)}
+            </div>
+          </section>}
 
           <div className="filter-row">
             {filterOptions.map(([value, label]) => (
@@ -1007,14 +1643,128 @@ function App() {
                     : t('details.codexHint')}</span>
                 </div>
               </div>
+
             </>
           ) : (
             <div className="detail-empty"><Activity /><span>{t('empty.details')}</span></div>
           )}
         </aside>
+
+        {nativeMobile && <section className="lan-api-pane" aria-labelledby="lan-api-title">
+          <header className="lan-api-page-head">
+            <div className={`lan-api-page-icon ${lanApi.running ? 'running' : ''}`}><Globe2 /></div>
+            <div>
+              <span className="eyebrow">{t('mobile.api')}</span>
+              <h2 id="lan-api-title">{t('updates.titleLan')}</h2>
+              <p>{t('updates.subtitle')}</p>
+            </div>
+            <span className={`lan-api-state ${lanApi.running ? 'running' : ''}`}><span />{lanApi.running ? t('updates.running') : t('updates.idle')}</span>
+          </header>
+
+          <div className="lan-api-page-body">
+            <button type="button" className={`lan-api-pool-summary ${lanPoolOpen ? 'open' : ''}`} onClick={() => setLanPoolOpen((open) => !open)} aria-expanded={lanPoolOpen} disabled={!lanApiPoolTotal}>
+              <KeyRound />
+              <div><strong>{t('updates.pool', { count: lanApiPoolCount })}</strong><span>{lanApiPoolTotal ? t('updates.poolManage', { enabled: lanApiPoolCount, total: lanApiPoolTotal }) : t('updates.poolEmpty')}</span></div>
+              <ChevronRight className="lan-api-pool-chevron" />
+            </button>
+
+            {lanPoolOpen && <div className="lan-api-upstream-list">
+              <div className="lan-api-upstream-head"><strong>{t('updates.poolListTitle')}</strong><span>{t('updates.poolActiveCount', { enabled: lanApiPoolCount, total: lanApiPoolTotal })}</span></div>
+              {apiProviders.map((provider) => <div className={`lan-api-upstream-item ${provider.enabled ? '' : 'disabled'}`} key={provider.id}>
+                <ServerCog />
+                <div><strong>{provider.name}</strong><span>{t('updates.providerUpstream')} · {provider.protocol === 'responses' ? 'Responses API' : 'Chat Completions'} · {provider.model}</span></div>
+                <label className="lan-api-upstream-toggle" aria-label={t('updates.toggleUpstream', { name: provider.name })}>
+                  <input type="checkbox" role="switch" checked={provider.enabled} disabled={lanPoolUpdating || Boolean(activeApiProvider && activeApiProvider.id !== provider.id)} onChange={(event) => void setLanUpstreamEnabled('provider', provider.id, event.target.checked)} />
+                  <span />
+                </label>
+              </div>)}
+              {lanEligibleAccounts.map((account) => {
+                const configuredEnabled = !lanDisabledAccountIdSet.has(account.id);
+                const enabled = configuredEnabled && !activeApiProvider;
+                const name = account.email || account.accountId || account.id;
+                return <div className={`lan-api-upstream-item ${enabled ? '' : 'disabled'}`} key={account.id}>
+                  {account.credentialKind === 'oauth' ? <LockKeyhole /> : <KeyRound />}
+                  <div><strong>{name}</strong><span>{account.credentialKind === 'oauth' ? 'OAuth' : 'API Key'} · {t(onlineLabelKeys[account.onlineStatus])}</span></div>
+                  <label className="lan-api-upstream-toggle" aria-label={t('updates.toggleUpstream', { name })}>
+                    <input type="checkbox" role="switch" checked={enabled} disabled={lanPoolUpdating || Boolean(activeApiProvider)} onChange={(event) => void setLanUpstreamEnabled('account', account.id, event.target.checked)} />
+                    <span />
+                  </label>
+                </div>;
+              })}
+            </div>}
+
+            <p className="lan-api-hint">{t('updates.hint')}</p>
+            <div className="lan-api-proxy-note"><Globe2 /><div><strong>{t('updates.proxyHintTitle')}</strong><span>{t('updates.proxyHint')}</span></div></div>
+            {!lanApi.running && <label className="lan-api-port"><span>{t('updates.port')}</span><input type="number" inputMode="numeric" min="1024" max="65535" value={lanApiPort} onChange={(event) => setLanApiPort(Number(event.target.value))} /></label>}
+            {lanApi.running && <div className="lan-api-connection">
+              <div><code>http://{lanApi.ip}:{lanApi.port}/v1</code><button className="icon-button" onClick={() => void copyLanApiValue(`http://${lanApi.ip}:${lanApi.port}/v1`)} title={t('updates.copyAddress')} aria-label={t('updates.copyAddress')}><Copy /></button></div>
+              {lanApi.token ? <div><code>Bearer {lanApi.token}</code><button className="icon-button" onClick={() => void copyLanApiValue(`Bearer ${lanApi.token}`)} title={t('updates.copyToken')} aria-label={t('updates.copyToken')}><Copy /></button></div> : <span className="lan-api-restart-note">{t('updates.tokenUnavailable')}</span>}
+            </div>}
+            <div className="lan-api-test">
+              <div className="lan-api-test-action">
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => void testLanApiConnection()}
+                  disabled={!lanApi.running || !lanApiPoolCount || lanPoolUpdating || lanApiTest.state === 'loading'}
+                >
+                  {lanApiTest.state === 'loading' ? <LoaderCircle className="spin" /> : <RefreshCw />}
+                  {lanApiTest.state === 'loading'
+                    ? t('updates.testingModels')
+                    : lanApiTest.state === 'idle'
+                      ? t('updates.test')
+                      : t('updates.retest')}
+                </button>
+              </div>
+              {lanApiTest.state === 'loading' && <div className="lan-api-test-result loading" role="status" aria-live="polite">
+                <div className="lan-api-test-summary"><LoaderCircle className="spin" /><strong>{t('updates.testingModels')}</strong></div>
+              </div>}
+              {lanApiTest.state === 'success' && <div className="lan-api-test-result success" role="status" aria-live="polite">
+                <div className="lan-api-test-summary"><CheckCircle2 /><strong>{t('updates.testPassed', { elapsed: lanApiTest.result.elapsedMs })}</strong></div>
+                <div className="lan-api-test-meta">
+                  <span>{t('updates.testModelDetail', { count: lanApiTest.result.models.length, model: lanApiTest.result.selectedModel })}</span>
+                  <span>{t('updates.testUpstream', {
+                    name: lanApiTest.result.upstreamName,
+                    protocol: lanApiTest.result.protocol === 'responses'
+                      ? 'Responses API'
+                      : lanApiTest.result.protocol === 'chat_completions'
+                        ? 'Chat Completions'
+                        : lanApiTest.result.protocol,
+                  })}</span>
+                  <span>{t('updates.testModels')}</span>
+                  {lanApiTest.result.models.length
+                    ? <div className="lan-api-test-models">{lanApiTest.result.models.map((model, index) => <code key={`${model}-${index}`}>{model}</code>)}</div>
+                    : <span>{t('updates.testNoModels')}</span>}
+                  {lanApiTest.result.response && <div className="lan-api-test-response">{t('updates.testResponse', {
+                    response: lanApiTest.result.response.length > 240 ? `${lanApiTest.result.response.slice(0, 240)}...` : lanApiTest.result.response,
+                  })}</div>}
+                </div>
+              </div>}
+              {lanApiTest.state === 'error' && <div className="lan-api-test-result failed" role="alert">
+                <div className="lan-api-test-summary"><AlertCircle /><strong>{t('updates.testFailed')}</strong></div>
+                <div className="lan-api-test-meta">
+                  <span>{t('updates.testError', { message: lanApiTest.error })}</span>
+                  {lanApiTest.result?.selectedModel && <span>{t('updates.testModelDetail', {
+                    count: lanApiTest.result.models.length,
+                    model: lanApiTest.result.selectedModel,
+                  })}</span>}
+                </div>
+              </div>}
+            </div>
+            <button className={`button lan-api-toggle ${lanApi.running ? 'danger' : 'primary'}`} onClick={() => void toggleLanApi()} disabled={isImporting || isValidating || (!lanApi.running && !lanApiPoolCount)}>
+              {lanApi.running ? <Ban /> : <Globe2 />}{lanApi.running ? t('updates.stop') : t('updates.start')}
+            </button>
+          </div>
+        </section>}
       </main>
 
-      {notice && <div className="toast"><CheckCircle2 />{notice}<button onClick={() => setNotice(undefined)} aria-label={t('actions.close')}><X /></button></div>}
+      {notice && <div className="toast" role="status" aria-live="polite"><CheckCircle2 />{notice}<button onClick={() => setNotice(undefined)} aria-label={t('actions.close')}><X /></button></div>}
+      {updateOpen && update && <div className="modal-backdrop" role="presentation"><section className="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title">
+        <div className="modal-head"><div><span className="eyebrow">{t('updates.eyebrow')}</span><h2 id="update-title">{t('updates.title', { version: update.version })}</h2></div><button className="icon-button" onClick={() => setUpdateOpen(false)} aria-label={t('actions.close')}><X /></button></div>
+        <p className="update-summary">{update.name}{update.publishedAt ? ` · ${new Intl.DateTimeFormat(isEnglish ? 'en-US' : 'zh-CN', { dateStyle: 'medium' }).format(new Date(update.publishedAt))}` : ''}</p>
+        {update.notes && <pre className="update-notes">{update.notes}</pre>}
+        <div className="modal-actions"><button className="button secondary" onClick={() => setUpdateOpen(false)}>{t('updates.later')}</button><button className="button primary" onClick={() => void openUpdateDownload()}><Download />{t('updates.download')}</button></div>
+      </section></div>}
       {isDragging && <div className="drop-overlay"><UploadCloud /><strong>{t('notices.drop')}</strong></div>}
 
       <input
@@ -1038,6 +1788,46 @@ function App() {
           event.target.value = '';
         }}
       />
+
+      {providerOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setProviderOpen(false)}>
+          <div className="modal compact provider-modal" role="dialog" aria-modal="true" aria-labelledby="provider-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-head"><div><span className="eyebrow">{t('providers.eyebrow')}</span><h2 id="provider-title">{providerDraft.id ? t('providers.editTitle') : t('providers.addTitle')}</h2></div><button className="icon-button" onClick={() => setProviderOpen(false)} aria-label={t('actions.close')}><X /></button></div>
+            <div className="provider-form">
+              <label><span>{t('providers.name')}</span><input value={providerDraft.name} onChange={(event) => setProviderDraft((current) => ({ ...current, name: event.target.value }))} autoFocus placeholder={t('providers.namePlaceholder')} /></label>
+              <label><span>Base URL</span><input value={providerDraft.baseUrl} onChange={(event) => { setProviderDraft((current) => ({ ...current, baseUrl: event.target.value })); setProviderModels([]); setProviderModelFetch({ state: 'idle' }); }} inputMode="url" placeholder="https://api.example.com/v1" /></label>
+              <label><span>Key</span><input type="password" value={providerDraft.apiKey} onChange={(event) => { setProviderDraft((current) => ({ ...current, apiKey: normalizeApiKey(event.target.value) })); setProviderModels([]); setProviderModelFetch({ state: 'idle' }); }} autoComplete="off" placeholder="sk-..." /></label>
+              <fieldset><legend>{t('providers.protocol')}</legend><div className="provider-protocol-switch"><button type="button" className={providerDraft.protocol === 'responses' ? 'active' : ''} onClick={() => setProviderDraft((current) => ({ ...current, protocol: 'responses' }))}>Responses API</button><button type="button" className={providerDraft.protocol === 'chat_completions' ? 'active' : ''} onClick={() => setProviderDraft((current) => ({ ...current, protocol: 'chat_completions' }))}>Chat Completions</button></div></fieldset>
+              <div className="provider-model-field">
+                <span>{t('providers.model')}</span>
+                <div className="provider-model-row">
+                  <input list="provider-model-options" value={providerDraft.model} onChange={(event) => setProviderDraft((current) => ({ ...current, model: event.target.value }))} placeholder={t('providers.modelPlaceholder')} />
+                  <button type="button" className="button secondary provider-model-fetch" onClick={() => void fetchApiProviderModels()} disabled={providerModelFetch.state === 'loading'}>
+                    {providerModelFetch.state === 'loading' ? <LoaderCircle className="spin" /> : <RefreshCw />}
+                    {t(providerModelFetch.state === 'loading' ? 'providers.fetchingModels' : 'providers.fetchModels')}
+                  </button>
+                </div>
+                <datalist id="provider-model-options">{providerModels.map((model) => <option key={model} value={model} />)}</datalist>
+                {providerModelFetch.state !== 'idle' && <div className={`provider-model-status ${providerModelFetch.state}`} role={providerModelFetch.state === 'error' ? 'alert' : 'status'}>
+                  {providerModelFetch.state === 'loading' ? <LoaderCircle className="spin" /> : providerModelFetch.state === 'success' ? <CheckCircle2 /> : <AlertCircle />}
+                  <span>{providerModelFetch.state === 'loading'
+                    ? t('providers.modelsHint')
+                    : providerModelFetch.state === 'success'
+                      ? t('providers.modelsFound', { count: providerModelFetch.count })
+                      : providerModelFetch.message}</span>
+                </div>}
+                {providerModels.length > 0 && <div className="provider-model-list" aria-label={t('providers.selectModel')}>
+                  {providerModels.map((model) => <button type="button" key={model} className={providerDraft.model === model ? 'selected' : ''} onClick={() => setProviderDraft((current) => ({ ...current, model }))}>{model}</button>)}
+                </div>}
+              </div>
+              <label className="provider-enabled-field"><input type="checkbox" checked={providerDraft.enabled} disabled={Boolean(activeApiProvider && activeApiProvider.id !== providerDraft.id)} onChange={(event) => setProviderDraft((current) => ({ ...current, enabled: event.target.checked }))} /><span>{t('providers.useInPool')}</span></label>
+              {activeApiProvider && activeApiProvider.id !== providerDraft.id && <p className="provider-form-note">{t('providers.disableActiveFirst', { name: activeApiProvider.name })}</p>}
+              {providerError && <p className="provider-form-error" role="alert">{providerError}</p>}
+            </div>
+            <div className="modal-actions"><button className="button secondary" onClick={() => setProviderOpen(false)}>{t('actions.cancel')}</button><button className="button primary" onClick={() => void saveApiProvider()} disabled={lanPoolUpdating}><ServerCog />{t('providers.save')}</button></div>
+          </div>
+        </div>
+      )}
 
       {pasteOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setPasteOpen(false)}>
@@ -1064,7 +1854,7 @@ function App() {
               <label><input type="radio" name="validation-scope" checked={validationScope === 'batch'} onChange={() => setValidationScope('batch')} /><span>{t('validation.batch')}</span></label>
               <label><input type="radio" name="validation-scope" checked={validationScope === 'all'} onChange={() => setValidationScope('all')} /><span>{t('validation.all')}</span></label>
             </div>
-            <div className="modal-actions"><button className="button secondary" onClick={() => setValidateOpen(false)}>{t('actions.cancel')}</button><button className="button verify" onClick={() => void runOnlineValidation()} disabled={!networkCheck.allowed || networkCheck.state === 'checking'}><ShieldCheck />{t('actions.startValidation')}</button></div>
+            <div className="modal-actions"><button className="button secondary" onClick={() => setValidateOpen(false)}>{t('actions.cancel')}</button><button className="button verify" onClick={() => void runOnlineValidation()}><ShieldCheck />{t('actions.startValidation')}</button></div>
           </div>
         </div>
       )}
