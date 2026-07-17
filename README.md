@@ -20,7 +20,6 @@
 ## 目录
 
 - [功能概览](#功能概览)
-- [界面预览](#界面预览)
 - [下载与安装](#下载与安装)
 - [账号验证](#账号验证)
 - [Android 局域网 API](#android-局域网-api)
@@ -52,23 +51,6 @@
 
 > [!WARNING]
 > **VPN 与 LAN API 不能在当前发布版本中同时使用。** 测试 OpenAI、Codex 等国外模型的账号额度时，在实际发起测试的设备上开启所需 VPN/代理；需要手机将 LAN API 转发给电脑时，手机和电脑都必须关闭全部 VPN、代理客户端和 Windows 系统代理。否则可能出现 `HTTP 502`、超时或获取模型失败。详见 [LAN API 与 VPN 排障说明](docs/troubleshooting-lan-api-502.md)。
-
-## 界面预览
-
-![Windows 账号仪表盘](docs/images/desktop-dashboard.png)
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/android-account-list.png" width="320" alt="Android 账号列表"><br>账号与自定义供应商</td>
-    <td align="center"><img src="docs/screenshots/android-provider-models.png" width="320" alt="自定义供应商模型"><br>获取并选择上游模型</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/android-lan-upstreams.png" width="320" alt="LAN 上游管理"><br>LAN 上游与互斥状态</td>
-    <td align="center"><img src="docs/screenshots/android-lan-test.png" width="320" alt="LAN API 测试"><br>随机模型真实连接测试</td>
-  </tr>
-</table>
-
-![Codex++ 供应商配置](docs/screenshots/codexplusplus-lan-setup.png)
 
 ## 下载与安装
 
