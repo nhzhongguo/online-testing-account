@@ -20,7 +20,6 @@
 ## Contents
 
 - [Overview](#overview)
-- [Screenshots](#screenshots)
 - [Download and installation](#download-and-installation)
 - [Account validation](#account-validation)
 - [Android LAN API](#android-lan-api)
@@ -52,23 +51,6 @@
 
 > [!WARNING]
 > **VPN/proxy use and LAN API forwarding cannot be combined in the current release.** To check quota or test OpenAI, Codex, and other foreign models, enable the required VPN/proxy on the device making the request. To forward the phone's LAN API to a computer, turn off every VPN/proxy client on both the phone and computer, including the Windows system proxy. Otherwise model discovery can fail with `HTTP 502` or a timeout. See [LAN API and VPN troubleshooting](docs/troubleshooting-lan-api-502.md).
-
-## Screenshots
-
-![Windows account dashboard](docs/images/desktop-dashboard.png)
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/android-account-list.png" width="320" alt="Android account list"><br>Accounts and custom providers</td>
-    <td align="center"><img src="docs/screenshots/android-provider-models.png" width="320" alt="Custom-provider models"><br>Discover and select upstream models</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/android-lan-upstreams.png" width="320" alt="LAN upstream manager"><br>LAN upstream and exclusivity state</td>
-    <td align="center"><img src="docs/screenshots/android-lan-test.png" width="320" alt="LAN API test"><br>Real randomized model test</td>
-  </tr>
-</table>
-
-![Codex++ provider setup](docs/screenshots/codexplusplus-lan-setup.png)
 
 ## Download and installation
 
