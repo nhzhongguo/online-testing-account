@@ -61,8 +61,12 @@ interface Window {
     pickFolder: () => Promise<FolderImportSelection | null>;
     readFolderBatch: (importId: string) => Promise<FolderImportBatch>;
     checkNetworkRegion: () => Promise<NetworkCheckResult>;
+    openExternal: (url: string) => Promise<{ opened: boolean }> ;
     validateCredential: (input: ValidationInput) => Promise<ValidationResult>;
     saveReport: (content: string) => Promise<{ saved: boolean }>;
     saveJson: (content: string, suggestedName: string) => Promise<{ saved: boolean }>;
+    loadWorkspace: () => Promise<{ available: boolean; workspace: unknown; error?: string }> ;
+    saveWorkspace: (workspace: unknown) => Promise<{ saved: boolean; available: boolean }> ;
+    clearWorkspace: () => Promise<{ cleared: boolean }> ;
   };
 }

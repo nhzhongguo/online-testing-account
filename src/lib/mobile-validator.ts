@@ -254,9 +254,9 @@ function createNetworkResult(ip: unknown, countryCode: unknown, provider: string
     countryCode: normalizedCountry,
     provider,
     detail: !countryKnown
-      ? 'Unable to identify the exit country; validation is blocked'
+      ? 'Unable to identify the exit country; validation can continue, but use a proxy for foreign models'
       : normalizedCountry === 'CN'
-        ? 'Mainland China exit detected; enable a foreign proxy and check again'
+        ? 'Mainland China exit detected; validation can continue, but foreign models may require a proxy'
         : `Exit country ${normalizedCountry}; online validation is available`,
   };
 }
@@ -288,7 +288,7 @@ export async function checkNetworkRegionMobile(): Promise<NetworkCheckResult> {
       const data = response.data as Record<string, unknown>;
       return createNetworkResult(data.ip, data.country, 'country.is');
     } catch {
-      return { allowed: false, detail: 'Unable to detect the exit IP; check the network and enable a foreign proxy' };
+      return { allowed: false, detail: 'Unable to detect the exit IP; validation can continue, but use a proxy for foreign models' };
     }
   }
 }

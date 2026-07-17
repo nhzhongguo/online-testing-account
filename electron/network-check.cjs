@@ -23,9 +23,9 @@ function createResult(ip, countryCode, provider) {
     countryCode: normalizedCountry,
     provider,
     detail: !countryKnown
-      ? '无法确认出口 IP 所在国家，已阻止在线验证'
+      ? '无法确认出口 IP 所在国家；仍可继续，测试外国模型时建议开启代理'
       : normalizedCountry === 'CN'
-        ? '当前为中国大陆出口 IP，请开启国外代理后重新检测'
+        ? '当前为中国大陆出口 IP；仍可继续，但外国模型可能需要代理'
         : `当前出口位于 ${normalizedCountry}，可以进行在线验证`,
   };
 }
@@ -56,7 +56,7 @@ async function checkNetworkRegion() {
     } catch {
       return {
         allowed: false,
-        detail: '无法检测当前出口 IP，已阻止在线验证；请检查网络并开启国外代理',
+        detail: '无法检测当前出口 IP；仍可继续，测试外国模型时建议开启代理',
       };
     }
   }
