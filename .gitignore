@@ -33,3 +33,7 @@ online-testing-account-usable-*.json
 *.log
 .DS_Store
 Thumbs.db
+
+# Local troubleshooting screenshots may contain account names or pairing tokens.
+/*.png
+docs/screenshots/*.jpg
