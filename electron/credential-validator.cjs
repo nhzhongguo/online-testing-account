@@ -4,6 +4,11 @@ const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
 const OPENAI_TOKEN_URL = 'https://auth.openai.com/oauth/token';
 const CODEX_VERSION = '0.144.0';
 const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_VERSION} (Windows 10; x86_64)`;
+let requestFetch = globalThis.fetch;
+
+function setCredentialFetch(fetchImpl) {
+  if (typeof fetchImpl === 'function') requestFetch = fetchImpl;
+}
 
 function classifyHttpStatus(status) {
   if (status >= 200 && status < 300) return 'alive';
@@ -75,7 +80,7 @@ async function requestWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await requestFetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
@@ -263,5 +268,6 @@ async function validateCredential(input) {
 module.exports = {
   classifyHttpStatus,
   quotaFromPayload,
+  setCredentialFetch,
   validateCredential,
 };

@@ -1,10 +1,15 @@
 const NETWORK_CHECK_TIMEOUT_MS = 10_000;
+let requestFetch = globalThis.fetch;
+
+function setNetworkFetch(fetchImpl) {
+  if (typeof fetchImpl === 'function') requestFetch = fetchImpl;
+}
 
 async function fetchWithTimeout(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), NETWORK_CHECK_TIMEOUT_MS);
   try {
-    return await fetch(url, {
+    return await requestFetch(url, {
       headers: { 'User-Agent': 'Online-testing-account/0.8.3' },
       signal: controller.signal,
     });
@@ -62,4 +67,4 @@ async function checkNetworkRegion() {
   }
 }
 
-module.exports = { checkNetworkRegion };
+module.exports = { checkNetworkRegion, setNetworkFetch };

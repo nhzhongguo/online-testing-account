@@ -1,9 +1,9 @@
-const { app, BrowserWindow, dialog, ipcMain, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, net, session, shell, safeStorage } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { validateCredential } = require('./credential-validator.cjs');
-const { checkNetworkRegion } = require('./network-check.cjs');
+const { setCredentialFetch, validateCredential } = require('./credential-validator.cjs');
+const { checkNetworkRegion, setNetworkFetch } = require('./network-check.cjs');
 
 const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_FOLDER_FILES = 10_000;
@@ -231,7 +231,12 @@ ipcMain.handle('accounts:save-json', async (_event, content, suggestedName) => {
   return { saved: true };
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Route main-process requests through the same Windows system proxy as the UI.
+  await session.defaultSession.setProxy({ mode: 'system' }).catch(() => undefined);
+  const proxiedFetch = (...args) => net.fetch(...args);
+  setCredentialFetch(proxiedFetch);
+  setNetworkFetch(proxiedFetch);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
