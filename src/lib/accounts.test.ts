@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Buffer } from 'node:buffer';
-import { createRedactedReport, createSub2ApiExport, importAccountText, mergeAccounts } from './accounts';
+import { createRedactedReport, createSub2ApiExport, credentialFingerprint, importAccountText, mergeAccounts } from './accounts';
 
 function jwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -9,6 +9,10 @@ function jwt(payload: Record<string, unknown>): string {
 
 describe('account imports', () => {
   const now = Date.parse('2026-07-16T00:00:00.000Z');
+
+  it('uses a SHA-256 fingerprint for credential identity', () => {
+    expect(credentialFingerprint('collision-2rnw')).toBe('cd066c6f94e9d583ee06c538cd8ed7ed97a8fcd2f0f9bb5e8c01019b0927d4ae');
+  });
 
   it('parses ChatGPT session metadata and JWT expiry', () => {
     const result = importAccountText(JSON.stringify({
@@ -98,6 +102,24 @@ describe('account imports', () => {
     expect(merged[0].email).toBe('b@example.com');
     expect(report).not.toContain('same-token');
     expect(report).not.toContain('real-refresh-token');
+  });
+
+  it('does not merge credentials that share the old 32-bit hash collision', async () => {
+    const first = importAccountText(JSON.stringify({ access_token: 'collision-2rnw' }), 'first.json', now).accounts;
+    const second = importAccountText(JSON.stringify({ access_token: 'collision-jpba' }), 'second.json', now).accounts;
+
+    expect((await mergeAccounts(first, second))).toHaveLength(2);
+  });
+
+  it('does not erase a verified quota when an import has no quota data', async () => {
+    const verified = importAccountText(JSON.stringify({ access_token: 'verified-token', email: 'verified@example.com' }), 'verified.json', now).accounts;
+    verified[0].onlineStatus = 'alive';
+    verified[0].quota = { primary: { usedPercent: 18, windowMinutes: 300 }, checkedAt: now };
+    const sparseDuplicate = importAccountText(JSON.stringify({ access_token: 'verified-token' }), 'sparse.json', now).accounts;
+
+    const merged = await mergeAccounts(verified, sparseDuplicate);
+
+    expect(merged[0]).toMatchObject({ onlineStatus: 'alive', quota: verified[0].quota });
   });
 
   it('preserves refresh capability when duplicate records are merged', () => {

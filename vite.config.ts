@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
+import { defineConfig } from 'vitest/config';
+import type { Plugin, ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import { createRequire } from 'node:module';
 
@@ -52,6 +53,9 @@ function localValidationPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), localValidationPlugin()],
+  test: {
+    exclude: ['**/node_modules/**', 'scripts/**/*.test.mjs'],
+  },
   base: './',
   server: {
     host: '127.0.0.1',

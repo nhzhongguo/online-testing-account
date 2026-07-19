@@ -56,6 +56,9 @@ import {
 import { checkNetworkRegionMobile, isNativeMobile, validateCredentialMobile } from './lib/mobile-validator';
 import { runSequentially } from './lib/sequential-runner';
 import { ValidationController } from './lib/validation-controller';
+import { appendHistory, exportHistory, toRedactedHistoryEvent, type HistoryEvent } from './domain/history';
+import { createWorkspaceStorage } from './platform/workspace';
+import { APP_VERSION } from './version';
 
 type Filter = 'all' | 'untested' | 'alive' | 'unauthorized' | 'rate_limited' | 'attention';
 type NetworkCheckState = NetworkCheckResult & { state: 'idle' | 'checking' | 'allowed' | 'blocked' | 'error' };
@@ -111,8 +114,7 @@ const GUIDE_STEPS: GuideStep[] = [
 
 const PAGE_SIZE = 100;
 const IMPORT_BATCH_SIZE = 25;
-const WORKSPACE_STORAGE_KEY = 'ota-workspace-v1';
-const CURRENT_VERSION = '0.8.4';
+const CURRENT_VERSION = APP_VERSION.version;
 const RELEASE_API_URL = 'https://api.github.com/repos/nhzhongguo/online-testing-account/releases/latest';
 
 interface ReleaseUpdate {
@@ -167,6 +169,8 @@ interface SavedWorkspace {
   selectedId?: string;
   apiProviders?: ApiProvider[];
   lanDisabledAccountIds?: string[];
+  history?: HistoryEvent[];
+  updatedAt?: number;
 }
 
 type ApiProviderProtocol = 'responses' | 'chat_completions';
@@ -243,19 +247,6 @@ function parseProviderModels(value: unknown): string[] {
 
 function isLikelyTextProviderModel(model: string) {
   return !/(?:^|[-_./])(auto|router|image|video|audio|tts|asr|realtime|embedding|moderation|whisper)(?:$|[-_./])/i.test(model);
-}
-
-function loadSavedWorkspace(): SavedWorkspace | undefined {
-  if (window.accountPulse) return undefined;
-  try {
-    const saved = localStorage.getItem(WORKSPACE_STORAGE_KEY);
-    if (!saved) return undefined;
-    const parsed = JSON.parse(saved) as SavedWorkspace;
-    if (parsed.version !== 1 || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.issues)) return undefined;
-    return parsed;
-  } catch {
-    return undefined;
-  }
 }
 
 interface ImportAggregate {
@@ -382,12 +373,13 @@ function App() {
   const { t, i18n } = useTranslation();
   const isEnglish = i18n.resolvedLanguage === 'en';
   const nativeMobile = isNativeMobile();
-  const [savedWorkspace] = useState(loadSavedWorkspace);
-  const [accounts, setAccounts] = useState<AccountRecord[]>(() => savedWorkspace?.accounts ?? []);
-  const [issues, setIssues] = useState<ImportIssue[]>(() => savedWorkspace?.issues ?? []);
-  const [apiProviders, setApiProviders] = useState<ApiProvider[]>(() => normalizeApiProviders(savedWorkspace?.apiProviders ?? []));
-  const [lanDisabledAccountIds, setLanDisabledAccountIds] = useState<string[]>(() => savedWorkspace?.lanDisabledAccountIds ?? []);
-  const [selectedId, setSelectedId] = useState<string | undefined>(() => savedWorkspace?.selectedId);
+  const workspaceStorage = useMemo(() => createWorkspaceStorage<SavedWorkspace>(nativeMobile), [nativeMobile]);
+  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+  const [issues, setIssues] = useState<ImportIssue[]>([]);
+  const [apiProviders, setApiProviders] = useState<ApiProvider[]>([]);
+  const [lanDisabledAccountIds, setLanDisabledAccountIds] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryEvent[]>([]);
+  const [selectedId, setSelectedId] = useState<string | undefined>();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -427,7 +419,7 @@ function App() {
   const [update, setUpdate] = useState<ReleaseUpdate>();
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
-  const [workspaceState, setWorkspaceState] = useState<'loading' | 'secured' | 'temporary' | 'unavailable'>(() => window.accountPulse ? 'loading' : 'temporary');
+  const [workspaceState, setWorkspaceState] = useState<'loading' | 'secured' | 'temporary' | 'unavailable'>(() => workspaceStorage.mode === 'encrypted' ? 'loading' : 'temporary');
   const [workspaceUpdatedAt, setWorkspaceUpdatedAt] = useState<number>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -502,37 +494,32 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!window.accountPulse) return;
     let active = true;
-    void window.accountPulse.loadWorkspace().then((result) => {
+    void workspaceStorage.load().then((workspace) => {
       if (!active) return;
-      if (!result.available) { setWorkspaceState('unavailable'); return; }
-      const workspace = result.workspace as { accounts?: AccountRecord[]; issues?: ImportIssue[]; apiProviders?: ApiProvider[]; lanDisabledAccountIds?: string[]; updatedAt?: number } | null;
-      if (workspace?.accounts && Array.isArray(workspace.accounts)) {
+      if (workspace?.version === 1 && Array.isArray(workspace.accounts) && Array.isArray(workspace.issues)) {
         setAccounts(workspace.accounts);
-        setIssues(Array.isArray(workspace.issues) ? workspace.issues : []);
+        setIssues(workspace.issues);
         setApiProviders(normalizeApiProviders(Array.isArray(workspace.apiProviders) ? workspace.apiProviders : []));
         setLanDisabledAccountIds(Array.isArray(workspace.lanDisabledAccountIds) ? workspace.lanDisabledAccountIds : []);
-        setSelectedId(workspace.accounts[0]?.id);
+        setHistory(Array.isArray(workspace.history) ? workspace.history : []);
+        setSelectedId(workspace.selectedId ?? workspace.accounts[0]?.id);
         setWorkspaceUpdatedAt(workspace.updatedAt);
       }
-      setWorkspaceState('secured');
-      if (result.error) setNotice(result.error);
+      setWorkspaceState(workspaceStorage.mode === 'encrypted' ? 'secured' : 'temporary');
     }).catch(() => { if (active) setWorkspaceState('unavailable'); });
     return () => { active = false; };
-  }, []);
+  }, [workspaceStorage]);
 
   useEffect(() => {
-    if (!window.accountPulse || workspaceState !== 'secured') return undefined;
+    if (workspaceState === 'loading' || workspaceState === 'unavailable') return undefined;
     const timer = window.setTimeout(() => {
       const updatedAt = Date.now();
-      void window.accountPulse?.saveWorkspace({ accounts, issues, apiProviders, lanDisabledAccountIds, updatedAt }).then((result) => {
-        if (result.saved) setWorkspaceUpdatedAt(updatedAt);
-        else setWorkspaceState('unavailable');
-      }).catch(() => setWorkspaceState('unavailable'));
+      const workspace: SavedWorkspace = { version: 1, accounts, issues, selectedId, apiProviders, lanDisabledAccountIds, history, updatedAt };
+      void workspaceStorage.save(workspace).then(() => setWorkspaceUpdatedAt(updatedAt)).catch(() => setWorkspaceState('unavailable'));
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [accounts, issues, apiProviders, lanDisabledAccountIds, workspaceState]);
+  }, [accounts, issues, selectedId, apiProviders, lanDisabledAccountIds, history, workspaceState, workspaceStorage]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -545,16 +532,6 @@ function App() {
   // handlePickFiles is intentionally omitted: the listener only needs the current busy state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isImporting, isValidating]);
-
-  useEffect(() => {
-    if (window.accountPulse) return;
-    try {
-      const workspace: SavedWorkspace = { version: 1, accounts, issues, selectedId, apiProviders, lanDisabledAccountIds };
-      localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
-    } catch {
-      // The active workspace remains usable if browser storage is unavailable or full.
-    }
-  }, [accounts, issues, selectedId, apiProviders, lanDisabledAccountIds]);
 
   const stats = useMemo(() => {
     let alive = 0;
@@ -935,12 +912,24 @@ function App() {
     await runSequentially(batch, async (account) => {
       if (!await validationControlRef.current.waitForPermission()) return false;
       setActiveValidationId(account.id);
+      const startedAt = Date.now();
       let result: ValidationResult;
       try {
         result = await requestValidation(validationInputFor(account));
       } catch {
         result = { status: 'network_error', detail: t('notices.validationServiceFailed') };
       }
+      setHistory((current) => appendHistory(current, toRedactedHistoryEvent({
+        type: 'validation',
+        outcome: result.status === 'alive' ? 'success' : ['rate_limited', 'forbidden'].includes(result.status) ? 'attention' : 'failure',
+        fingerprint: account.fingerprint,
+        detail: result.detail,
+        elapsedMs: Date.now() - startedAt,
+        quota: result.quota,
+        credential: account.credential,
+        refreshCredential: account.refreshCredential,
+        apiKey: result.credential,
+      }), { maxEntries: 500, maxAgeDays: 30 }));
       bufferedResults.set(account.id, result);
       completed += 1;
       setValidationProgress({ done: completed, total: batch.length });
@@ -966,7 +955,19 @@ function App() {
     if (!selected || selected.credentialKind !== 'oauth') return;
     setIsQuotaRefreshing(true);
     try {
+      const startedAt = Date.now();
       const result = await requestValidation(validationInputFor(selected));
+      setHistory((current) => appendHistory(current, toRedactedHistoryEvent({
+        type: 'validation',
+        outcome: result.status === 'alive' ? 'success' : ['rate_limited', 'forbidden'].includes(result.status) ? 'attention' : 'failure',
+        fingerprint: selected.fingerprint,
+        detail: result.detail,
+        elapsedMs: Date.now() - startedAt,
+        quota: result.quota,
+        credential: selected.credential,
+        refreshCredential: selected.refreshCredential,
+        apiKey: result.credential,
+      }), { maxEntries: 500, maxAgeDays: 30 }));
       setAccounts((current) => current.map((account) => account.id === selected.id
         ? {
             ...account,
@@ -1302,6 +1303,7 @@ function App() {
       generatedAt: new Date().toISOString(),
       totals: { total: accounts.length, ...stats },
       statuses: accounts.map(({ email, fingerprint, format, credentialKind, onlineStatus, onlineDetail, checkedAt, quota }) => ({ email, fingerprint, format, credentialKind, onlineStatus, onlineDetail, checkedAt, quota })),
+      history: exportHistory(history).events,
     }, null, 2);
     if (window.accountPulse) {
       void window.accountPulse.saveReport(content).then((result) => { if (result.saved) setNotice('脱敏审计报告已导出'); });
@@ -1340,10 +1342,10 @@ function App() {
     setIssues([]);
     setApiProviders([]);
     setLanDisabledAccountIds([]);
+    setHistory([]);
     setSelectedId(undefined);
     setNotice(undefined);
-    if (window.accountPulse) void window.accountPulse.clearWorkspace();
-    else localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+    void workspaceStorage.clear().catch(() => setWorkspaceState('unavailable'));
   }
 
   return (

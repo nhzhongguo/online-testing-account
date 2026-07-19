@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { setCredentialFetch, validateCredential } = require('./credential-validator.cjs');
 const { checkNetworkRegion, setNetworkFetch } = require('./network-check.cjs');
+const { createWorkspaceVault } = require('./workspace-vault.cjs');
 
 const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_FOLDER_FILES = 10_000;
@@ -16,25 +17,21 @@ function vaultPath() {
 }
 
 async function readWorkspace() {
-  if (!safeStorage.isEncryptionAvailable()) return { available: false, workspace: null };
-  try {
-    const encrypted = await fs.readFile(vaultPath());
-    const decoded = safeStorage.decryptString(encrypted);
-    const workspace = JSON.parse(decoded);
-    return { available: true, workspace: workspace && typeof workspace === 'object' ? workspace : null };
-  } catch (error) {
-    if (error && error.code === 'ENOENT') return { available: true, workspace: null };
-    return { available: true, workspace: null, error: '无法读取已保存的本地工作区' };
-  }
+  return createWorkspaceVault({
+    vaultPath: vaultPath(),
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+    available: () => safeStorage.isEncryptionAvailable(),
+  }).read();
 }
 
 async function writeWorkspace(workspace) {
-  if (!safeStorage.isEncryptionAvailable()) return { saved: false, available: false };
-  if (!workspace || typeof workspace !== 'object') return { saved: false, available: true };
-  const content = JSON.stringify(workspace);
-  if (content.length > 50 * 1024 * 1024) return { saved: false, available: true };
-  await fs.writeFile(vaultPath(), safeStorage.encryptString(content));
-  return { saved: true, available: true };
+  return createWorkspaceVault({
+    vaultPath: vaultPath(),
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+    available: () => safeStorage.isEncryptionAvailable(),
+  }).write(workspace);
 }
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
@@ -196,8 +193,12 @@ ipcMain.handle('app:open-external', async (_event, url) => {
 ipcMain.handle('workspace:load', async () => readWorkspace());
 ipcMain.handle('workspace:save', async (_event, workspace) => writeWorkspace(workspace));
 ipcMain.handle('workspace:clear', async () => {
-  try { await fs.unlink(vaultPath()); } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
-  return { cleared: true };
+  return createWorkspaceVault({
+    vaultPath: vaultPath(),
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+    available: () => safeStorage.isEncryptionAvailable(),
+  }).clear();
 });
 
 ipcMain.handle('accounts:save-report', async (_event, content) => {

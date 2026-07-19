@@ -515,7 +515,7 @@ public class LanApiPlugin extends Plugin {
       }
       return output.toByteArray();
     }
-    private String readHeaders(BufferedInputStream in) throws IOException { ByteArrayOutputStream b = new ByteArrayOutputStream(); int x, last = 0; while ((x = in.read()) != -1 && b.size() < 32768) { b.write(x); if (last == '\r' && x == '\n') { String s = b.toString(StandardCharsets.UTF_8); if (s.endsWith("\r\n\r\n")) return s; } last = x; } return null; }
+    private String readHeaders(BufferedInputStream in) throws IOException { ByteArrayOutputStream b = new ByteArrayOutputStream(); int x, last = 0; while ((x = in.read()) != -1 && b.size() < 32768) { b.write(x); if (last == '\r' && x == '\n') { String s = new String(b.toByteArray(), StandardCharsets.UTF_8); if (s.endsWith("\r\n\r\n")) return s; } last = x; } return null; }
     private void write(OutputStream out, int code, String message) throws IOException { byte[] data = ("{\"error\":{\"message\":\"" + message + "\"}}").getBytes(StandardCharsets.UTF_8); out.write(("HTTP/1.1 " + code + " Error\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\n\r\n").getBytes(StandardCharsets.UTF_8)); out.write(data); }
   }
 }
