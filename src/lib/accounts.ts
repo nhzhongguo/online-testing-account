@@ -188,13 +188,19 @@ function hasCredentialShape(record: JsonObject): boolean {
   return Boolean(getString(
     record.accessToken,
     record.access_token,
+    record.id_token,
+    record.idToken,
     record.OPENAI_API_KEY,
     record.api_key,
     record.apiKey,
     tokens.access_token,
     tokens.accessToken,
+    tokens.id_token,
+    tokens.idToken,
     credentials.access_token,
     credentials.accessToken,
+    credentials.id_token,
+    credentials.idToken,
   ));
 }
 
@@ -236,12 +242,18 @@ function createAccount(candidate: Candidate, sourceName: string, now: number): A
   const accessToken = getString(
     record.accessToken,
     record.access_token,
+    record.id_token,
+    record.idToken,
     tokens.access_token,
     tokens.accessToken,
+    tokens.id_token,
+    tokens.idToken,
     token.access_token,
     token.accessToken,
     credentials.access_token,
     credentials.accessToken,
+    credentials.id_token,
+    credentials.idToken,
   );
   const credential = apiKey || accessToken;
   if (!credential) return undefined;

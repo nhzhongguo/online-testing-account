@@ -51,8 +51,24 @@ function localValidationPlugin(): Plugin {
   };
 }
 
+function devContentSecurityPolicyPlugin(): Plugin {
+  return {
+    name: 'account-pulse-dev-csp',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html, context) {
+        if (!context.server) return html;
+        return html.replace(
+          /style-src 'self'/,
+          "style-src 'self' 'unsafe-inline'",
+        );
+      },
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), localValidationPlugin()],
+  plugins: [react(), localValidationPlugin(), devContentSecurityPolicyPlugin()],
   test: {
     exclude: ['**/node_modules/**', 'scripts/**/*.test.mjs'],
   },

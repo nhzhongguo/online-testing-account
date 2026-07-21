@@ -84,6 +84,33 @@ describe('account imports', () => {
     });
   });
 
+  it('imports c2api3 sub2api credentials that use id_token', () => {
+    const result = importAccountText(JSON.stringify({
+      type: 'c2api3',
+      version: 1,
+      accounts: [{
+        name: 'c2api3-account',
+        platform: 'openai',
+        credentials: {
+          id_token: jwt({ sub: 'user-1', email: 'c2@example.com' }),
+          account_id: 'account-c2',
+          chatgpt_account_id: 'account-c2',
+          email: 'c2@example.com',
+          plan_type: 'pro',
+          auth_mode: 'chatgpt',
+        },
+      }],
+    }), 'c2api3.json', now);
+
+    expect(result.accounts).toHaveLength(1);
+    expect(result.accounts[0]).toMatchObject({
+      format: 'sub2api',
+      credentialKind: 'oauth',
+      email: 'c2@example.com',
+      accountId: 'account-c2',
+    });
+  });
+
   it('allows standard API keys to be online-tested', () => {
     const result = importAccountText(JSON.stringify({ OPENAI_API_KEY: 'sk-example-key-value-123456789' }), 'key.json', now);
     expect(result.accounts[0]).toMatchObject({

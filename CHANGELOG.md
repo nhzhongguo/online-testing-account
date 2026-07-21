@@ -1,3 +1,15 @@
+# Version 2.0.1
+
+新增：
+- 支持 c2api3 导出的 `credentials.id_token` 账号导入。
+- 增加 Windows NSIS 安装包与 Android Debug APK 发布产物。
+
+优化：
+- 修复 Vite 开发环境 CSP 拦截内联样式导致桌面界面无样式的问题。
+
+修复：
+- 修复 c2api3 账号被误判为不受支持凭据的问题。
+
 # Version 2.0.0
 
 新增：
